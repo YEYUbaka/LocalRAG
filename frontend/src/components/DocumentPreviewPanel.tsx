@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Spin, Typography } from 'antd';
 import { CloseOutlined, FileTextOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { DocumentContent } from '../types';
 import { getDocumentContent } from '../services/api';
 
@@ -146,7 +147,7 @@ export default function DocumentPreviewPanel({ docId, highlightSnippet, onClose 
           </div>
         ) : (
           <div className="markdown-body">
-            <ReactMarkdown>{buildDisplayContent()}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{buildDisplayContent()}</ReactMarkdown>
           </div>
         )}
       </div>

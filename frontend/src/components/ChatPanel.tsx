@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Input, Button, message, Spin } from 'antd';
 import { SendOutlined, PlusOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message, Source, Conversation } from '../types';
@@ -150,7 +151,7 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
               >
                 {msg.role === 'assistant' ? (
                   <div className="markdown-body">
-                    <ReactMarkdown components={MarkdownComponents}>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{msg.content}</ReactMarkdown>
                   </div>
                 ) : (
                   msg.content
@@ -172,7 +173,7 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
                 }}
               >
                 <div className="markdown-body">
-                  <ReactMarkdown components={MarkdownComponents}>{streamingContent}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{streamingContent}</ReactMarkdown>
                 </div>
                 {pendingSources && pendingSources.length > 0 && (
                   <SourcePanel sources={pendingSources} onSourceClick={handleSourceClick} />
