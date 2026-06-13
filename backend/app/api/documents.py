@@ -1,3 +1,5 @@
+import re
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException
@@ -5,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Document
-from app.services.document_service import compute_md5, process_document, delete_document
+from app.services.document_service import compute_md5, process_document, delete_document, LOADER_MAP
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -19,27 +21,55 @@ def get_db():
         db.close()
 
 
+def _sanitize_filename(filename: str) -> str:
+    """Remove unsafe characters from filename, keeping Chinese, letters, digits, dots, underscores, hyphens."""
+    name = re.sub(r'[^\w一-鿿._-]', '', filename)
+    return name or "unnamed"
+
+
 @router.post("/upload")
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-    file_path = settings.uploads_dir / file.filename
-
+    # 1. Check file size
     content = await file.read()
+    if len(content) > settings.max_upload_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"文件大小超过限制（最大 {settings.max_upload_size // 1024 // 1024}MB）",
+        )
+
+    # 2. Check extension
+    original_filename = file.filename or "unnamed"
+    suffix = Path(original_filename).suffix.lower()
+    if suffix not in LOADER_MAP:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件格式: {suffix}",
+        )
+
+    # 3. Generate safe filename with UUID
+    safe_name = _sanitize_filename(Path(original_filename).stem)
+    stored_filename = f"{uuid.uuid4().hex}_{safe_name}{suffix}"
+
+    settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+    file_path = settings.uploads_dir / stored_filename
+
     with open(file_path, "wb") as f:
         f.write(content)
 
+    # 4. Check for duplicates
     md5 = compute_md5(file_path)
     existing = db.query(Document).filter(Document.md5_hash == md5).first()
     if existing:
         file_path.unlink()
         raise HTTPException(status_code=409, detail=f"文档已存在: {existing.filename}")
 
+    # 5. Create record (store original filename for display, safe path for storage)
     doc = Document(
-        filename=file.filename,
+        filename=original_filename,
         file_path=str(file_path),
         file_size=len(content),
         md5_hash=md5,
