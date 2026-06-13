@@ -41,6 +41,10 @@ export interface Settings {
   max_tokens: number;
   context_window: number;
   similarity_threshold: number;
+  hybrid_search: boolean;
+  bm25_weight: number;
+  retrieval_top_k: number;
+  rerank_top_k: number;
 }
 
 export interface DocumentContent {

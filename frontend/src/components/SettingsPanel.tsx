@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Form, Input, Slider, InputNumber, Button, message, Space, Typography } from 'antd';
+import { Form, Input, Slider, InputNumber, Button, message, Space, Typography, Switch } from 'antd';
 import type { Settings } from '../types';
 import { getSettings, updateSettings } from '../services/api';
 
@@ -28,6 +28,10 @@ export default function SettingsPanel() {
         max_tokens: settings.max_tokens,
         context_window: settings.context_window,
         similarity_threshold: settings.similarity_threshold,
+        hybrid_search: settings.hybrid_search,
+        bm25_weight: settings.bm25_weight,
+        retrieval_top_k: settings.retrieval_top_k,
+        rerank_top_k: settings.rerank_top_k,
       };
       if (apiKey) {
         payload.llm_api_key = apiKey;
@@ -75,12 +79,44 @@ export default function SettingsPanel() {
           />
         </Form.Item>
 
-        <Form.Item label="检索数量 (Top-K)">
+        <Form.Item label="启用混合检索" tooltip="BM25 关键词检索 + 向量语义检索，提升召回质量">
+          <Switch
+            checked={settings.hybrid_search}
+            onChange={(v) => setSettings({ ...settings, hybrid_search: v })}
+          />
+        </Form.Item>
+
+        {settings.hybrid_search && (
+          <>
+            <Form.Item label="BM25 权重" tooltip="BM25 关键词检索的权重，向量权重 = 1 - BM25 权重">
+              <Slider
+                min={0}
+                max={1}
+                step={0.1}
+                value={settings.bm25_weight}
+                onChange={(v) => setSettings({ ...settings, bm25_weight: v })}
+                marks={{ 0: '0', 0.5: '0.5', 1: '1' }}
+              />
+            </Form.Item>
+
+            <Form.Item label="粗检索数量" tooltip="每路检索返回的候选数量">
+              <InputNumber
+                min={5}
+                max={50}
+                value={settings.retrieval_top_k}
+                onChange={(v) => setSettings({ ...settings, retrieval_top_k: v || 20 })}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </>
+        )}
+
+        <Form.Item label="最终返回数量" tooltip="返回给用户的检索结果数量">
           <Slider
             min={1}
             max={10}
-            value={settings.top_k}
-            onChange={(v) => setSettings({ ...settings, top_k: v })}
+            value={settings.rerank_top_k}
+            onChange={(v) => setSettings({ ...settings, rerank_top_k: v })}
             marks={{ 1: '1', 5: '5', 10: '10' }}
           />
         </Form.Item>

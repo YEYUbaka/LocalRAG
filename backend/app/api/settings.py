@@ -17,6 +17,10 @@ class SettingsResponse(BaseModel):
     max_tokens: int
     context_window: int
     similarity_threshold: float
+    hybrid_search: bool
+    bm25_weight: float
+    retrieval_top_k: int
+    rerank_top_k: int
 
 
 class SettingsUpdate(BaseModel):
@@ -28,6 +32,10 @@ class SettingsUpdate(BaseModel):
     max_tokens: int | None = None
     context_window: int | None = None
     similarity_threshold: float | None = None
+    hybrid_search: bool | None = None
+    bm25_weight: float | None = None
+    retrieval_top_k: int | None = None
+    rerank_top_k: int | None = None
 
 
 def _build_response() -> SettingsResponse:
@@ -42,6 +50,10 @@ def _build_response() -> SettingsResponse:
         max_tokens=settings.max_tokens,
         context_window=settings.context_window,
         similarity_threshold=settings.similarity_threshold,
+        hybrid_search=settings.hybrid_search,
+        bm25_weight=settings.bm25_weight,
+        retrieval_top_k=settings.retrieval_top_k,
+        rerank_top_k=settings.rerank_top_k,
     )
 
 
@@ -68,6 +80,14 @@ def update_settings(update: SettingsUpdate):
         settings.context_window = update.context_window
     if update.similarity_threshold is not None:
         settings.similarity_threshold = update.similarity_threshold
+    if update.hybrid_search is not None:
+        settings.hybrid_search = update.hybrid_search
+    if update.bm25_weight is not None:
+        settings.bm25_weight = update.bm25_weight
+    if update.retrieval_top_k is not None:
+        settings.retrieval_top_k = update.retrieval_top_k
+    if update.rerank_top_k is not None:
+        settings.rerank_top_k = update.rerank_top_k
 
     _save_overrides(settings)
     return _build_response()
