@@ -7,6 +7,7 @@ PERSISTED_FIELDS = {
     "llm_base_url", "llm_api_key", "llm_model_name",
     "top_k", "temperature", "max_tokens", "context_window",
     "similarity_threshold", "max_upload_size",
+    "hybrid_search", "bm25_weight", "retrieval_top_k", "rerank_top_k",
 }
 
 
@@ -31,6 +32,12 @@ class Settings(BaseSettings):
 
     # Upload
     max_upload_size: int = 50 * 1024 * 1024  # 50MB
+
+    # Hybrid Search
+    hybrid_search: bool = True
+    bm25_weight: float = 0.5
+    retrieval_top_k: int = 20
+    rerank_top_k: int = 5
 
     # Data
     data_dir: str = "./data"
