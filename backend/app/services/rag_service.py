@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from sqlalchemy.orm import Session
 
-from app.core.vectorstore import search
+from app.core.vectorstore import hybrid_search
 from app.core.prompts import build_rag_prompt
 from app.services.llm_service import get_chat_model
 from app.config import settings
@@ -77,7 +77,7 @@ async def rag_query(
     db: Session,
 ) -> AsyncGenerator[str, None]:
     try:
-        sources = search(question)
+        sources = hybrid_search(question)
 
         # 计算 token 预算
         context_window = getattr(settings, 'context_window', DEFAULT_CONTEXT_WINDOW)
