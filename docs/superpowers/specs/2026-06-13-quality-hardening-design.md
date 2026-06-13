@@ -154,20 +154,24 @@ LocalRAG 文档预览功能已完成（11 commits）。审计发现三个关键�
 - 索引结构: 内存中维护 `{doc_id: [chunk_texts]}`
 - 启动时从数据库所有已完成文档重建索引
 - 文档增删时同步更新
+- 防御性设计: 索引操作加 try-except，失败时降级为纯向量检索
 
 ### RRF 融合
 
 ```python
-def rrf_fusion(vector_results, bm25_results, k=60):
+def rrf_fusion(vector_results, bm25_results, vector_weight=0.5, bm25_weight=0.5, k=60, top_n=5):
     scores = {}
     for rank, doc in enumerate(vector_results):
         doc_id = doc["id"]
-        scores[doc_id] = scores.get(doc_id, 0) + 1 / (k + rank)
+        scores[doc_id] = scores.get(doc_id, 0) + vector_weight / (k + rank)
     for rank, doc in enumerate(bm25_results):
         doc_id = doc["id"]
-        scores[doc_id] = scores.get(doc_id, 0) + 1 / (k + rank)
-    # 按 RRF 分数降序排列
+        scores[doc_id] = scores.get(doc_id, 0) + bm25_weight / (k + rank)
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    return ranked  # [(doc_id, rrf_score), ...]
 ```
+
+**权重说明:** `vector_weight` 和 `bm25_weight` 对应配置中的 `1 - bm25_weight` 和 `bm25_weight`，直接乘到各自的 RRF 分数上。
 
 ### 新增配置项
 
@@ -178,6 +182,8 @@ def rrf_fusion(vector_results, bm25_results, k=60):
 | `similarity_threshold` | `float` | `0.7` | 向量距离阈值 |
 | `retrieval_top_k` | `int` | `20` | 粗检索数量 |
 | `rerank_top_k` | `int` | `5` | 最终返回数量 |
+
+**`top_k` 处理:** 现有的 `top_k` 字段废弃，由 `rerank_top_k` 替代。`Settings` 类中保留 `top_k` 字段但标记为 deprecated，PUT handler 中将其值同步到 `rerank_top_k`。前端 SettingsPanel 中只展示 `rerank_top_k`，不再展示旧的 `top_k`。
 
 ### 前端 SettingsPanel 新增
 
