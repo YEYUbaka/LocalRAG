@@ -1,0 +1,112 @@
+"""BM25 keyword search index for hybrid retrieval."""
+
+import logging
+from rank_bm25 import BM25Okapi
+import jieba
+
+logger = logging.getLogger(__name__)
+
+# doc_id -> list of chunk texts
+_chunk_store: dict[int, list[str]] = {}
+_bm25_index: BM25Okapi | None = None
+_corpus: list[tuple[int, str]] = []  # [(doc_id, chunk_text), ...]
+_dirty = True
+
+
+def _tokenize(text: str) -> list[str]:
+    """Tokenize Chinese text using jieba."""
+    return list(jieba.cut(text))
+
+
+def _rebuild_index() -> None:
+    """Rebuild the BM25 index from all stored chunks."""
+    global _bm25_index, _corpus, _dirty
+    _corpus = []
+    for doc_id, chunks in _chunk_store.items():
+        for chunk in chunks:
+            _corpus.append((doc_id, chunk))
+
+    if not _corpus:
+        _bm25_index = None
+        _dirty = False
+        return
+
+    tokenized = [_tokenize(text) for _, text in _corpus]
+    _bm25_index = BM25Okapi(tokenized)
+    _dirty = False
+    logger.info(f"BM25 index rebuilt: {len(_corpus)} chunks from {len(_chunk_store)} documents")
+
+
+def add_document_chunks(doc_id: int, chunks: list[str]) -> None:
+    """Add chunks for a document to the BM25 index."""
+    global _dirty
+    try:
+        _chunk_store[doc_id] = chunks
+        _dirty = True
+    except Exception as e:
+        logger.warning(f"BM25: failed to add chunks for doc {doc_id}: {e}")
+
+
+def remove_document(doc_id: int) -> None:
+    """Remove a document's chunks from the BM25 index."""
+    global _dirty
+    try:
+        if doc_id in _chunk_store:
+            del _chunk_store[doc_id]
+            _dirty = True
+    except Exception as e:
+        logger.warning(f"BM25: failed to remove doc {doc_id}: {e}")
+
+
+def bm25_search(query: str, top_k: int = 20) -> list[dict]:
+    """Search using BM25 keyword matching. Returns list of {id, document, metadata}."""
+    global _dirty
+    if _dirty:
+        _rebuild_index()
+
+    if _bm25_index is None or not _corpus:
+        return []
+
+    tokenized_query = _tokenize(query)
+    scores = _bm25_index.get_scores(tokenized_query)
+
+    # Get top-k indices by score
+    ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+
+    results = []
+    for idx in ranked_indices:
+        if scores[idx] <= 0:
+            continue
+        doc_id, text = _corpus[idx]
+        results.append({
+            "id": f"doc_{doc_id}_chunk_{idx}",
+            "document": text,
+            "doc_id": doc_id,
+            "bm25_score": float(scores[idx]),
+        })
+
+    return results
+
+
+def rebuild_from_db(db_session_factory) -> None:
+    """Rebuild BM25 index from all completed documents in the database."""
+    from app.models import Document
+    db = db_session_factory()
+    try:
+        docs = db.query(Document).filter(Document.status == "completed").all()
+        for doc in docs:
+            if doc.parsed_content:
+                from app.services.document_service import split_documents, parse_document
+                from pathlib import Path
+                try:
+                    file_path = Path(doc.file_path)
+                    if file_path.exists():
+                        raw_docs = parse_document(file_path)
+                        texts, _ = split_documents(raw_docs, doc.filename)
+                        add_document_chunks(doc.id, texts)
+                except Exception as e:
+                    logger.warning(f"BM25: failed to rebuild for doc {doc.id}: {e}")
+        _rebuild_index()
+        logger.info(f"BM25 index rebuilt from DB: {len(_chunk_store)} documents")
+    finally:
+        db.close()
