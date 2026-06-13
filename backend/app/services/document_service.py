@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Document
 from app.core.vectorstore import add_documents, delete_by_doc_id
+
+logger = logging.getLogger(__name__)
 
 
 LOADER_MAP = {
@@ -95,6 +98,13 @@ def process_document(doc_id: int, db_session_factory) -> None:
 
         add_documents(doc_id, texts, metadatas)
 
+        # Sync BM25 index
+        try:
+            from app.core.bm25_search import add_document_chunks
+            add_document_chunks(doc_id, texts)
+        except Exception as e:
+            logger.warning(f"BM25 sync failed for doc {doc_id}: {e}")
+
         doc.status = "completed"
         db.commit()
     except Exception as e:
@@ -113,6 +123,13 @@ def delete_document(doc_id: int, db: Session) -> None:
         raise ValueError(f"文档 {doc_id} 不存在")
 
     delete_by_doc_id(doc_id)
+
+    # Remove from BM25 index
+    try:
+        from app.core.bm25_search import remove_document
+        remove_document(doc_id)
+    except Exception:
+        pass
 
     file_path = Path(doc.file_path)
     if file_path.exists():
