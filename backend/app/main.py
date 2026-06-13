@@ -51,3 +51,14 @@ app.add_middleware(
 app.include_router(documents_router)
 app.include_router(chat_router)
 app.include_router(settings_router)
+
+
+@app.on_event("startup")
+async def rebuild_bm25_index():
+    """Rebuild BM25 index from database on startup."""
+    try:
+        from app.core.bm25_search import rebuild_from_db
+        rebuild_from_db(SessionLocal)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"BM25 index rebuild failed: {e}")
