@@ -1,8 +1,16 @@
 """BM25 keyword search index for hybrid retrieval."""
 
 import logging
+import os
 from rank_bm25 import BM25Okapi
-import jieba
+
+# 静默 jieba 的字典加载输出
+with open(os.devnull, "w") as _devnull:
+    import sys
+    _old_stdout = sys.stdout
+    sys.stdout = _devnull
+    import jieba
+    sys.stdout = _old_stdout
 
 logger = logging.getLogger(__name__)
 

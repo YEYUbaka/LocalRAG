@@ -1,5 +1,12 @@
+import warnings
 from pathlib import Path
 from dotenv import load_dotenv
+
+# 静默第三方库的 deprecation warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pypdf")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="jieba")
+warnings.filterwarnings("ignore", message="ARC4 has been moved")
 
 # 加载 .env 文件
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
