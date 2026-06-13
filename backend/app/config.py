@@ -6,7 +6,7 @@ from pathlib import Path
 PERSISTED_FIELDS = {
     "llm_base_url", "llm_api_key", "llm_model_name",
     "top_k", "temperature", "max_tokens", "context_window",
-    "similarity_threshold",
+    "similarity_threshold", "max_upload_size",
 }
 
 
@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     max_tokens: int = 2048
     context_window: int = 8192
     similarity_threshold: float = 0.7
+
+    # Upload
+    max_upload_size: int = 50 * 1024 * 1024  # 50MB
 
     # Data
     data_dir: str = "./data"
