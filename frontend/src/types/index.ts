@@ -40,6 +40,7 @@ export interface Settings {
   temperature: number;
   max_tokens: number;
   context_window: number;
+  similarity_threshold: number;
 }
 
 export interface DocumentContent {
