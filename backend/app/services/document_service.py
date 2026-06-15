@@ -2,7 +2,11 @@ import hashlib
 import logging
 from pathlib import Path
 
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
+from langchain_community.document_loaders import (
+    PyPDFLoader, Docx2txtLoader, TextLoader,
+    UnstructuredExcelLoader, UnstructuredPowerPointLoader,
+    BSHTMLLoader, CSVLoader,
+)
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy.orm import Session
 
@@ -19,6 +23,11 @@ LOADER_MAP = {
     ".doc": Docx2txtLoader,
     ".md": TextLoader,
     ".txt": TextLoader,
+    ".xlsx": UnstructuredExcelLoader,
+    ".pptx": UnstructuredPowerPointLoader,
+    ".html": BSHTMLLoader,
+    ".htm": BSHTMLLoader,
+    ".csv": CSVLoader,
 }
 
 

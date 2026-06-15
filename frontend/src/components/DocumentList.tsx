@@ -91,7 +91,7 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
       <Dragger
         multiple
         showUploadList={false}
-        accept=".pdf,.docx,.doc,.md,.txt"
+        accept=".pdf,.docx,.doc,.md,.txt,.xlsx,.pptx,.html,.htm,.csv"
         beforeUpload={handleUpload}
         disabled={loading}
         style={{ marginBottom: 16, padding: '16px 0' }}
@@ -100,7 +100,7 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
           <InboxOutlined />
         </p>
         <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
-        <p className="ant-upload-hint">支持 PDF、Word、Markdown、TXT 格式</p>
+        <p className="ant-upload-hint">支持 PDF、Word、Markdown、TXT、Excel、PPT、HTML、CSV 格式</p>
       </Dragger>
       <List
         size="small"
