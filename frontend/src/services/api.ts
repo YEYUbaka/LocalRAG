@@ -53,6 +53,11 @@ export async function deleteConversation(id: number): Promise<void> {
   await request(`/chat/${id}`, { method: 'DELETE' });
 }
 
+// Export
+export function getExportUrl(conversationId: number): string {
+  return `${BASE}/export/conversation/${conversationId}`;
+}
+
 // Settings
 export async function getSettings(): Promise<Settings> {
   return request('/settings');

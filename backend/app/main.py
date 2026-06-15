@@ -22,6 +22,7 @@ from app.api.documents import router as documents_router
 from app.api.chat import router as chat_router
 from app.api.settings import router as settings_router
 from app.api.knowledge_bases import router as kb_router
+from app.api.export import router as export_router
 
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -80,6 +81,7 @@ app.include_router(documents_router)
 app.include_router(chat_router)
 app.include_router(settings_router)
 app.include_router(kb_router)
+app.include_router(export_router)
 
 
 @app.on_event("startup")

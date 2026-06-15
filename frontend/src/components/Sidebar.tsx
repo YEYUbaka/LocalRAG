@@ -6,10 +6,11 @@ import {
   SettingOutlined,
   PlusOutlined,
   DeleteOutlined,
+  ExportOutlined,
   DatabaseOutlined,
 } from '@ant-design/icons';
 import type { Conversation, KnowledgeBase } from '../types';
-import { listConversations, deleteConversation, listKBs, createKB, deleteKB } from '../services/api';
+import { listConversations, deleteConversation, listKBs, createKB, deleteKB, getExportUrl } from '../services/api';
 import DocumentList from './DocumentList';
 import SettingsPanel from './SettingsPanel';
 
@@ -174,6 +175,15 @@ export default function Sidebar({ currentConversationId, onSelectConversation, r
                 <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {conv.title}
                 </span>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ExportOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(getExportUrl(conv.id), '_blank');
+                  }}
+                />
                 <Button
                   type="text"
                   size="small"
