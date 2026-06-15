@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { List, Button, Upload, message, Tag, Popconfirm, Typography } from 'antd';
-import { UploadOutlined, DeleteOutlined, FilePdfOutlined, FileTextOutlined, FileWordOutlined, InboxOutlined } from '@ant-design/icons';
+import { UploadOutlined, DeleteOutlined, FilePdfOutlined, FileTextOutlined, FileWordOutlined, InboxOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
 import type { Document } from '../types';
-import { listDocuments, uploadDocument, deleteDocument, getDocumentStatus } from '../services/api';
+import { listDocuments, uploadDocument, deleteDocument, getDocumentStatus, reprocessDocument } from '../services/api';
 
 const { Dragger } = Upload;
 const { Text } = Typography;
@@ -86,6 +86,17 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
     }
   };
 
+  const handleReprocess = async (id: number) => {
+    try {
+      await reprocessDocument(id);
+      message.success('已开始重新处理');
+      await loadDocs();
+      pollStatus(id);
+    } catch (e: any) {
+      message.error(e.message);
+    }
+  };
+
   return (
     <div style={{ padding: '0 8px' }}>
       <Dragger
@@ -111,6 +122,9 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
             onClick={() => doc.status === 'completed' && onDocumentClick?.(doc.id)}
             style={{ cursor: doc.status === 'completed' ? 'pointer' : 'default' }}
             actions={[
+              ...(doc.status === 'completed' || doc.status === 'failed' ? [
+                <Button type="text" icon={<ReloadOutlined />} size="small" onClick={() => handleReprocess(doc.id)} />
+              ] : []),
               <Popconfirm title="确认删除？" onConfirm={() => handleDelete(doc.id)}>
                 <Button type="text" danger icon={<DeleteOutlined />} size="small" />
               </Popconfirm>,

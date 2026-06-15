@@ -131,6 +131,40 @@ def get_document_status(doc_id: int, db: Session = Depends(get_db)):
     return {"id": doc.id, "status": doc.status, "error_message": doc.error_message}
 
 
+@router.post("/{doc_id}/reprocess")
+async def reprocess_document(
+    doc_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    if doc.status == "processing":
+        raise HTTPException(status_code=409, detail="文档正在处理中")
+
+    # Check file still exists
+    if not Path(doc.file_path).exists():
+        raise HTTPException(status_code=404, detail="文档文件不存在，请重新上传")
+
+    # Reset status
+    doc.status = "pending"
+    doc.error_message = None
+    db.commit()
+
+    # Delete old vectors and BM25 chunks
+    from app.core.vectorstore import delete_by_doc_id
+    from app.core.bm25_search import remove_document
+    delete_by_doc_id(doc_id)
+    remove_document(doc_id)
+
+    # Start background processing
+    from app.main import SessionLocal as Factory
+    background_tasks.add_task(process_document, doc.id, Factory)
+
+    return {"id": doc.id, "status": "pending"}
+
+
 @router.delete("/{doc_id}")
 def delete_document_endpoint(doc_id: int, db: Session = Depends(get_db)):
     try:

@@ -32,6 +32,10 @@ export async function deleteDocument(id: number): Promise<void> {
   await request(`/documents/${id}`, { method: 'DELETE' });
 }
 
+export async function reprocessDocument(id: number): Promise<{ id: number; status: string }> {
+  return request(`/documents/${id}/reprocess`, { method: 'POST' });
+}
+
 export async function getDocumentContent(id: number): Promise<DocumentContent> {
   return request(`/documents/${id}/content`);
 }
