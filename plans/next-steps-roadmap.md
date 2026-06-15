@@ -1,8 +1,27 @@
 # LocalRAG 文档更新 + 下一步开发计划
 
+> **最后更新**: 2026-06-16
+
 ## Context
 
 LocalRAG 文档预览功能已完成（11 commits）。审计发现 CLAUDE.md 过时、配置文件不一致、有未使用依赖。结合 2026 年 RAG 行业趋势（混合检索、Reranking、composable pipeline），规划下一步开发方向。
+
+## 进度总览
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Part 1 | 文档清理 + 配置修复 | ✅ 完成 |
+| Phase 1 | 设置持久化、文件安全、相似度阈值 | ✅ 完成 |
+| Phase 2A | 混合检索（BM25 + 向量 RRF） | ✅ 完成 |
+| Phase 2B | Reranking（bge-reranker-v2-m3） | ✅ 完成 |
+| Phase 2C | 查询改写（LLM 多查询扩展） | ✅ 完成 |
+| Phase 3A | 更多文档格式（xlsx/pptx/html/csv） | ✅ 完成 |
+| Phase 3B | 多知识库管理 | ✅ 完成 |
+| Phase 3C | 文档重新处理 | ✅ 完成 |
+| Phase 3D | 对话导出 | ✅ 完成 |
+| Phase 4 | 测试覆盖（15 tests） | ✅ 完成 |
+| Phase 4 | Docker 部署 | ❌ 未开始 |
+| Phase 4 | 多用户支持 | ❌ 未开始 |
 
 ---
 
