@@ -16,9 +16,10 @@ interface Props {
   onNewConversation: (id: number) => void;
   previewDocId: number | null;
   onPreviewDocChange: (docId: number | null, snippet?: string) => void;
+  currentKbId: number;
 }
 
-export default function ChatPanel({ conversationId, onNewConversation, previewDocId, onPreviewDocChange }: Props) {
+export default function ChatPanel({ conversationId, onNewConversation, previewDocId, onPreviewDocChange, currentKbId }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -117,7 +118,7 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
         setLoading(false);
         setStreamingContent('');
       },
-    });
+    }, currentKbId);
   };
 
   return (

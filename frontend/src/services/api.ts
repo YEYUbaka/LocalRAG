@@ -1,4 +1,4 @@
-import type { Document, Conversation, Settings, DocumentContent } from '../types';
+import type { Document, Conversation, Settings, DocumentContent, KnowledgeBase } from '../types';
 
 const BASE = '/api';
 
@@ -12,14 +12,16 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 // Documents
-export async function uploadDocument(file: File): Promise<{ id: number; filename: string; status: string }> {
+export async function uploadDocument(file: File, kbId: number = 1): Promise<{ id: number; filename: string; status: string }> {
   const form = new FormData();
   form.append('file', file);
+  form.append('kb_id', String(kbId));
   return request('/documents/upload', { method: 'POST', body: form });
 }
 
-export async function listDocuments(): Promise<Document[]> {
-  return request('/documents');
+export async function listDocuments(kbId?: number): Promise<Document[]> {
+  const params = kbId !== undefined ? `?kb_id=${kbId}` : '';
+  return request(`/documents${params}`);
 }
 
 export async function getDocumentStatus(id: number): Promise<{ id: number; status: string; error_message: string | null }> {
@@ -58,4 +60,21 @@ export async function updateSettings(data: Partial<Settings> & { llm_api_key?: s
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+}
+
+// Knowledge Bases
+export async function listKBs(): Promise<KnowledgeBase[]> {
+  return request('/kb');
+}
+
+export async function createKB(data: { name: string; description?: string }): Promise<{ id: number; name: string; description: string | null }> {
+  return request('/kb', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteKB(id: number): Promise<void> {
+  await request(`/kb/${id}`, { method: 'DELETE' });
 }

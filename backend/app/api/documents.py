@@ -2,7 +2,7 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -31,6 +31,7 @@ def _sanitize_filename(filename: str) -> str:
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    kb_id: int = Form(1),
     db: Session = Depends(get_db),
 ):
     # 1. Check file size
@@ -69,6 +70,7 @@ async def upload_document(
 
     # 5. Create record (store original filename for display, safe path for storage)
     doc = Document(
+        kb_id=kb_id,
         filename=original_filename,
         file_path=str(file_path),
         file_size=len(content),
@@ -86,8 +88,11 @@ async def upload_document(
 
 
 @router.get("")
-def list_documents(db: Session = Depends(get_db)):
-    docs = db.query(Document).order_by(Document.created_at.desc()).all()
+def list_documents(kb_id: int | None = Query(None), db: Session = Depends(get_db)):
+    query = db.query(Document)
+    if kb_id is not None:
+        query = query.filter(Document.kb_id == kb_id)
+    docs = query.order_by(Document.created_at.desc()).all()
     return [
         {
             "id": d.id,

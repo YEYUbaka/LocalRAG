@@ -56,3 +56,11 @@ export interface DocumentContent {
   page_breaks: number[] | null;
   chunk_count: number;
 }
+
+export interface KnowledgeBase {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string | null;
+  doc_count: number;
+}

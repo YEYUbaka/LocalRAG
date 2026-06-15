@@ -7,12 +7,13 @@ import ChatPanel from './components/ChatPanel';
 
 export default function App() {
   const [conversationId, setConversationId] = useState<number | null>(null);
+  const [currentKbId, setCurrentKbId] = useState<number>(1);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [previewDocId, setPreviewDocId] = useState<number | null>(null);
 
-  const handlePreviewChange = (docId: number | null) => {
+  const handlePreviewChange = (docId: number | null, _snippet?: string) => {
     setPreviewDocId(docId);
   };
 
@@ -50,6 +51,8 @@ export default function App() {
         }}
         refreshTrigger={refreshTrigger}
         onDocumentClick={(docId) => handlePreviewChange(docId)}
+        currentKbId={currentKbId}
+        onKbChange={setCurrentKbId}
       />
     </>
   );
@@ -86,6 +89,7 @@ export default function App() {
             onNewConversation={handleNewConversation}
             previewDocId={previewDocId}
             onPreviewDocChange={handlePreviewChange}
+            currentKbId={currentKbId}
           />
         </div>
       </div>

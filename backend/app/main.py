@@ -21,6 +21,7 @@ from app.models import Base
 from app.api.documents import router as documents_router
 from app.api.chat import router as chat_router
 from app.api.settings import router as settings_router
+from app.api.knowledge_bases import router as kb_router
 
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -40,7 +41,27 @@ def migrate_db(engine):
             conn.execute(sa.text("ALTER TABLE documents ADD COLUMN page_breaks JSON"))
         if "chunk_count" not in existing_cols:
             conn.execute(sa.text("ALTER TABLE documents ADD COLUMN chunk_count INTEGER DEFAULT 0"))
+        # Create knowledge_bases table if not exists
+        if "knowledge_bases" not in inspector.get_table_names():
+            conn.execute(sa.text("""
+                CREATE TABLE knowledge_bases (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    description TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        # Add kb_id to documents if missing
+        if "kb_id" not in existing_cols:
+            conn.execute(sa.text("ALTER TABLE documents ADD COLUMN kb_id INT DEFAULT 1"))
         conn.commit()
+
+    # Ensure default KB exists
+    with engine.connect() as conn:
+        result = conn.execute(sa.text("SELECT COUNT(*) FROM knowledge_bases"))
+        if result.scalar() == 0:
+            conn.execute(sa.text("INSERT INTO knowledge_bases (id, name, description) VALUES (1, '默认知识库', '系统默认知识库')"))
+            conn.commit()
 
 
 migrate_db(engine)
@@ -58,6 +79,7 @@ app.add_middleware(
 app.include_router(documents_router)
 app.include_router(chat_router)
 app.include_router(settings_router)
+app.include_router(kb_router)
 
 
 @app.on_event("startup")

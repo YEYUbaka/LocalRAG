@@ -24,15 +24,16 @@ function getIcon(filename: string) {
 
 interface Props {
   onDocumentClick?: (docId: number) => void;
+  currentKbId: number;
 }
 
-export default function DocumentList({ onDocumentClick }: Props) {
+export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
 
   const loadDocs = async () => {
     try {
-      const data = await listDocuments();
+      const data = await listDocuments(currentKbId);
       setDocs(data);
     } catch (e: any) {
       message.error(e.message);
@@ -41,12 +42,12 @@ export default function DocumentList({ onDocumentClick }: Props) {
 
   useEffect(() => {
     loadDocs();
-  }, []);
+  }, [currentKbId]);
 
   const handleUpload = async (file: File) => {
     setLoading(true);
     try {
-      const result = await uploadDocument(file);
+      const result = await uploadDocument(file, currentKbId);
       message.success(`上传成功: ${result.filename}`);
       await loadDocs();
       pollStatus(result.id);

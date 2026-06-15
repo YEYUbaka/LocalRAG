@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 # doc_id -> list of chunk texts
 _chunk_store: dict[int, list[str]] = {}
+# doc_id -> kb_id mapping
+_kb_map: dict[int, int] = {}
 _bm25_index: BM25Okapi | None = None
 _corpus: list[tuple[int, str]] = []  # [(doc_id, chunk_text), ...]
 _dirty = True
@@ -45,11 +47,12 @@ def _rebuild_index() -> None:
     logger.info(f"BM25 index rebuilt: {len(_corpus)} chunks from {len(_chunk_store)} documents")
 
 
-def add_document_chunks(doc_id: int, chunks: list[str]) -> None:
+def add_document_chunks(doc_id: int, chunks: list[str], kb_id: int = 1) -> None:
     """Add chunks for a document to the BM25 index."""
     global _dirty
     try:
         _chunk_store[doc_id] = chunks
+        _kb_map[doc_id] = kb_id
         _dirty = True
     except Exception as e:
         logger.warning(f"BM25: failed to add chunks for doc {doc_id}: {e}")
@@ -62,11 +65,12 @@ def remove_document(doc_id: int) -> None:
         if doc_id in _chunk_store:
             del _chunk_store[doc_id]
             _dirty = True
+        _kb_map.pop(doc_id, None)
     except Exception as e:
         logger.warning(f"BM25: failed to remove doc {doc_id}: {e}")
 
 
-def bm25_search(query: str, top_k: int = 20) -> list[dict]:
+def bm25_search(query: str, top_k: int = 20, kb_id: int | None = None) -> list[dict]:
     """Search using BM25 keyword matching. Returns list of {id, document, metadata}."""
     global _dirty
     if _dirty:
@@ -78,20 +82,24 @@ def bm25_search(query: str, top_k: int = 20) -> list[dict]:
     tokenized_query = _tokenize(query)
     scores = _bm25_index.get_scores(tokenized_query)
 
-    # Get top-k indices by score
-    ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+    # Get top-k indices by score, filtered by kb_id if specified
+    ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
 
     results = []
     for idx in ranked_indices:
         if scores[idx] <= 0:
             continue
         doc_id, text = _corpus[idx]
+        if kb_id is not None and _kb_map.get(doc_id) != kb_id:
+            continue
         results.append({
             "id": f"doc_{doc_id}_chunk_{idx}",
             "document": text,
             "doc_id": doc_id,
             "bm25_score": float(scores[idx]),
         })
+        if len(results) >= top_k:
+            break
 
     return results
 
@@ -111,7 +119,7 @@ def rebuild_from_db(db_session_factory) -> None:
                     if file_path.exists():
                         raw_docs = parse_document(file_path)
                         texts, _ = split_documents(raw_docs, doc.filename)
-                        add_document_chunks(doc.id, texts)
+                        add_document_chunks(doc.id, texts, kb_id=doc.kb_id)
                 except Exception as e:
                     logger.warning(f"BM25: failed to rebuild for doc {doc.id}: {e}")
         _rebuild_index()

@@ -7,10 +7,20 @@ class Base(DeclarativeBase):
     pass
 
 
+class KnowledgeBase(Base):
+    __tablename__ = "knowledge_bases"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Document(Base):
     __tablename__ = "documents"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    kb_id = Column(Integer, default=1, nullable=False)
     filename = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
     file_size = Column(Integer, nullable=False)

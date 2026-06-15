@@ -96,12 +96,12 @@ def process_document(doc_id: int, db_session_factory) -> None:
         texts, metadatas = split_documents(raw_docs, doc.filename)
         doc.chunk_count = len(texts)
 
-        add_documents(doc_id, texts, metadatas)
+        add_documents(doc_id, texts, metadatas, kb_id=doc.kb_id)
 
         # Sync BM25 index
         try:
             from app.core.bm25_search import add_document_chunks
-            add_document_chunks(doc_id, texts)
+            add_document_chunks(doc_id, texts, kb_id=doc.kb_id)
         except Exception as e:
             logger.warning(f"BM25 sync failed for doc {doc_id}: {e}")
 
