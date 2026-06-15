@@ -22,6 +22,7 @@ class SettingsResponse(BaseModel):
     retrieval_top_k: int
     rerank_top_k: int
     rerank_enabled: bool
+    query_rewrite_enabled: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -38,6 +39,7 @@ class SettingsUpdate(BaseModel):
     retrieval_top_k: int | None = None
     rerank_top_k: int | None = None
     rerank_enabled: bool | None = None
+    query_rewrite_enabled: bool | None = None
 
 
 def _build_response() -> SettingsResponse:
@@ -57,6 +59,7 @@ def _build_response() -> SettingsResponse:
         retrieval_top_k=settings.retrieval_top_k,
         rerank_top_k=settings.rerank_top_k,
         rerank_enabled=settings.rerank_enabled,
+        query_rewrite_enabled=settings.query_rewrite_enabled,
     )
 
 
@@ -93,6 +96,8 @@ def update_settings(update: SettingsUpdate):
         settings.rerank_top_k = update.rerank_top_k
     if update.rerank_enabled is not None:
         settings.rerank_enabled = update.rerank_enabled
+    if update.query_rewrite_enabled is not None:
+        settings.query_rewrite_enabled = update.query_rewrite_enabled
 
     _save_overrides(settings)
     return _build_response()

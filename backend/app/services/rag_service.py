@@ -77,7 +77,23 @@ async def rag_query(
     db: Session,
 ) -> AsyncGenerator[str, None]:
     try:
-        sources = hybrid_search(question)
+        # Multi-query search: rewrite query and search with each variant
+        if settings.query_rewrite_enabled:
+            from app.services.query_rewrite import rewrite_query
+            queries = await rewrite_query(question)
+
+            all_sources = []
+            seen_ids: set[str] = set()
+            for q in queries:
+                results = hybrid_search(q)
+                for r in results:
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        all_sources.append(r)
+
+            sources = all_sources[:settings.rerank_top_k]
+        else:
+            sources = hybrid_search(question)
 
         # 计算 token 预算
         context_window = getattr(settings, 'context_window', DEFAULT_CONTEXT_WINDOW)

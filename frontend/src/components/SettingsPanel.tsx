@@ -33,6 +33,7 @@ export default function SettingsPanel() {
         retrieval_top_k: settings.retrieval_top_k,
         rerank_top_k: settings.rerank_top_k,
         rerank_enabled: settings.rerank_enabled,
+        query_rewrite_enabled: settings.query_rewrite_enabled,
       };
       if (apiKey) {
         payload.llm_api_key = apiKey;
@@ -91,6 +92,13 @@ export default function SettingsPanel() {
           <Switch
             checked={settings.rerank_enabled}
             onChange={(v) => setSettings({ ...settings, rerank_enabled: v })}
+          />
+        </Form.Item>
+
+        <Form.Item label="启用查询改写" tooltip="使用 LLM 将问题改写为多个不同表述，扩大检索召回范围">
+          <Switch
+            checked={settings.query_rewrite_enabled}
+            onChange={(v) => setSettings({ ...settings, query_rewrite_enabled: v })}
           />
         </Form.Item>
 

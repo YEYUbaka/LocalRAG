@@ -46,6 +46,7 @@ export interface Settings {
   retrieval_top_k: number;
   rerank_top_k: number;
   rerank_enabled: boolean;
+  query_rewrite_enabled: boolean;
 }
 
 export interface DocumentContent {
