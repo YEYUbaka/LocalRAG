@@ -20,11 +20,24 @@ LocalRAG 是一个基于 RAG（检索增强生成）技术的本地个人知识�
 Frontend (React+TS) --REST+SSE--> Backend (FastAPI) --> ChromaDB (向量)
                                        |                    MySQL (元数据)
                                        |                    bge-small-zh (本地Embedding)
+                                       |                    bge-reranker-v2-m3 (本地Reranker)
                                        v
                                   Cloud LLM API (Qwen/OpenAI)
 ```
 
 核心设计原则：原始文档和向量索引完全本地化，仅将脱敏检索片段发送至云端 LLM。
+
+## Retrieval Pipeline
+
+```
+用户问题 → LLM 查询改写（2-3 个变体）
+         → 每个变体: vector(top 20) + BM25(top 20) → RRF fusion
+         → 合并去重
+         → bge-reranker 精排序
+         → top 5
+```
+
+可通过设置面板开关各阶段：query_rewrite_enabled、hybrid_search、rerank_enabled。
 
 ## Common Commands
 
@@ -66,9 +79,9 @@ mysql -u root -p -e "CREATE DATABASE localrag CHARACTER SET utf8mb4;"
 
 ## Project Structure
 
-- `backend/app/api/` — FastAPI 路由（documents, chat, settings）
-- `backend/app/services/` — 业务逻辑（document_service, rag_service, llm_service）
-- `backend/app/core/` — 基础设施（embedding, vectorstore, prompts）
+- `backend/app/api/` — FastAPI 路由（documents, chat, settings, knowledge_bases）
+- `backend/app/services/` — 业务逻辑（document_service, rag_service, llm_service, query_rewrite）
+- `backend/app/core/` — 基础设施（embedding, vectorstore, bm25_search, reranker, prompts）
 - `backend/app/models.py` — SQLAlchemy 数据模型（Document, Conversation, Message）
 - `frontend/src/components/` — React 组件（ChatPanel, DocumentList, DocumentPreviewPanel, SourcePanel, Sidebar, SettingsPanel）
 - `frontend/src/services/` — API 调用和 SSE 封装
