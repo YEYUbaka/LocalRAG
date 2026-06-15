@@ -45,6 +45,7 @@ export interface Settings {
   bm25_weight: number;
   retrieval_top_k: number;
   rerank_top_k: number;
+  rerank_enabled: boolean;
 }
 
 export interface DocumentContent {

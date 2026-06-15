@@ -8,6 +8,7 @@ PERSISTED_FIELDS = {
     "top_k", "temperature", "max_tokens", "context_window",
     "similarity_threshold", "max_upload_size",
     "hybrid_search", "bm25_weight", "retrieval_top_k", "rerank_top_k",
+    "rerank_enabled",
 }
 
 
@@ -38,6 +39,10 @@ class Settings(BaseSettings):
     bm25_weight: float = 0.5
     retrieval_top_k: int = 20
     rerank_top_k: int = 5
+
+    # Reranker
+    rerank_enabled: bool = True
+    reranker_model_path: str = str(Path(__file__).parent.parent.parent / "data" / "models" / "bge-reranker-v2-m3")
 
     # Data
     data_dir: str = "./data"

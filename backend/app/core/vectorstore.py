@@ -120,13 +120,28 @@ def hybrid_search(query: str) -> list[dict]:
         return []
 
     vector_weight = 1 - settings.bm25_weight
-    return rrf_fusion(
+    fused = rrf_fusion(
         vector_results,
         bm25_results,
         vector_weight=vector_weight,
         bm25_weight=settings.bm25_weight,
-        top_n=settings.rerank_top_k,
+        top_n=retrieval_k,  # Keep more candidates for reranking
     )
+
+    # Reranking step
+    if settings.rerank_enabled and fused:
+        try:
+            from app.core.reranker import rerank
+            documents = [item["document"] for item in fused]
+            scores = rerank(query, documents)
+            for item, score in zip(fused, scores):
+                item["rerank_score"] = score
+            fused.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Reranking failed, using RRF order: {e}")
+
+    return fused[:settings.rerank_top_k]
 
 
 def search(query: str, top_k: int | None = None) -> list[dict]:

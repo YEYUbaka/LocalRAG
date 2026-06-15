@@ -32,6 +32,7 @@ export default function SettingsPanel() {
         bm25_weight: settings.bm25_weight,
         retrieval_top_k: settings.retrieval_top_k,
         rerank_top_k: settings.rerank_top_k,
+        rerank_enabled: settings.rerank_enabled,
       };
       if (apiKey) {
         payload.llm_api_key = apiKey;
@@ -83,6 +84,13 @@ export default function SettingsPanel() {
           <Switch
             checked={settings.hybrid_search}
             onChange={(v) => setSettings({ ...settings, hybrid_search: v })}
+          />
+        </Form.Item>
+
+        <Form.Item label="启用重排序" tooltip="使用 bge-reranker-v2-m3 交叉编码器对检索结果重新排序，提升准确率">
+          <Switch
+            checked={settings.rerank_enabled}
+            onChange={(v) => setSettings({ ...settings, rerank_enabled: v })}
           />
         </Form.Item>
 
