@@ -5,18 +5,23 @@ from unittest.mock import MagicMock
 
 def test_list_kbs(client):
     c, mock_session = client
-    # Mock the KnowledgeBase query chain
     mock_kb = MagicMock()
     mock_kb.id = 1
     mock_kb.name = "默认知识库"
     mock_kb.description = "系统默认知识库"
     mock_kb.created_at = None
 
-    mock_query = MagicMock()
-    mock_query.order_by.return_value.all.return_value = [mock_kb]
-    mock_query.filter.return_value.count.return_value = 0
+    # query(KnowledgeBase).filter().order_by().all() → [mock_kb]
+    # query(Document).filter().count() → 0
+    def mock_query(model):
+        q = MagicMock()
+        if hasattr(model, '__tablename__') and model.__tablename__ == 'knowledge_bases':
+            q.filter.return_value.order_by.return_value.all.return_value = [mock_kb]
+        else:
+            q.filter.return_value.count.return_value = 0
+        return q
 
-    mock_session.query.return_value = mock_query
+    mock_session.query.side_effect = mock_query
 
     response = c.get("/api/kb")
     assert response.status_code == 200
@@ -32,8 +37,6 @@ def test_create_kb(client):
 
     def set_id(obj):
         obj.id = 2
-        obj.name = "测试知识库"
-        obj.description = "测试"
 
     mock_session.refresh.side_effect = set_id
 
