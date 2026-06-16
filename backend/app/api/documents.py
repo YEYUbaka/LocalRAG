@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Document
+from app.auth import get_current_user
 from app.services.document_service import compute_md5, process_document, delete_document, LOADER_MAP
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -33,6 +34,7 @@ async def upload_document(
     file: UploadFile = File(...),
     kb_id: int = Form(1),
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     # 1. Check file size
     content = await file.read()
@@ -71,6 +73,7 @@ async def upload_document(
     # 5. Create record (store original filename for display, safe path for storage)
     doc = Document(
         kb_id=kb_id,
+        user_id=user.id,
         filename=original_filename,
         file_path=str(file_path),
         file_size=len(content),
@@ -88,8 +91,8 @@ async def upload_document(
 
 
 @router.get("")
-def list_documents(kb_id: int | None = Query(None), db: Session = Depends(get_db)):
-    query = db.query(Document)
+def list_documents(kb_id: int | None = Query(None), db: Session = Depends(get_db), user=Depends(get_current_user)):
+    query = db.query(Document).filter(Document.user_id == user.id)
     if kb_id is not None:
         query = query.filter(Document.kb_id == kb_id)
     docs = query.order_by(Document.created_at.desc()).all()
@@ -108,8 +111,8 @@ def list_documents(kb_id: int | None = Query(None), db: Session = Depends(get_db
 
 
 @router.get("/{doc_id}/content")
-def get_document_content(doc_id: int, db: Session = Depends(get_db)):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
+def get_document_content(doc_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    doc = db.query(Document).filter(Document.id == doc_id, Document.user_id == user.id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     if doc.status != "completed":
@@ -124,8 +127,8 @@ def get_document_content(doc_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{doc_id}/status")
-def get_document_status(doc_id: int, db: Session = Depends(get_db)):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
+def get_document_status(doc_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    doc = db.query(Document).filter(Document.id == doc_id, Document.user_id == user.id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     return {"id": doc.id, "status": doc.status, "error_message": doc.error_message}
@@ -136,8 +139,9 @@ async def reprocess_document(
     doc_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
+    doc = db.query(Document).filter(Document.id == doc_id, Document.user_id == user.id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     if doc.status == "processing":
@@ -166,7 +170,11 @@ async def reprocess_document(
 
 
 @router.delete("/{doc_id}")
-def delete_document_endpoint(doc_id: int, db: Session = Depends(get_db)):
+def delete_document_endpoint(doc_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    # Verify ownership before deleting
+    doc = db.query(Document).filter(Document.id == doc_id, Document.user_id == user.id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
     try:
         delete_document(doc_id, db)
     except ValueError as e:

@@ -76,6 +76,7 @@ async def rag_query(
     conversation_id: int | None,
     db: Session,
     kb_id: int | None = None,
+    user_id: int | None = None,
 ) -> AsyncGenerator[str, None]:
     try:
         # Multi-query search: rewrite query and search with each variant
@@ -110,7 +111,7 @@ async def rag_query(
         if conversation_id:
             history = get_conversation_history(db, conversation_id, max_tokens=history_budget)
         else:
-            conversation = Conversation(title=question[:50])
+            conversation = Conversation(title=question[:50], user_id=user_id)
             db.add(conversation)
             db.commit()
             db.refresh(conversation)

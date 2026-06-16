@@ -23,6 +23,7 @@ from app.api.chat import router as chat_router
 from app.api.settings import router as settings_router
 from app.api.knowledge_bases import router as kb_router
 from app.api.export import router as export_router
+from app.api.auth import router as auth_router
 
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -55,6 +56,24 @@ def migrate_db(engine):
         # Add kb_id to documents if missing
         if "kb_id" not in existing_cols:
             conn.execute(sa.text("ALTER TABLE documents ADD COLUMN kb_id INT DEFAULT 1"))
+
+        # Create users table if not exists
+        if "users" not in inspector.get_table_names():
+            conn.execute(sa.text("""
+                CREATE TABLE users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+
+        # Add user_id to documents, conversations, knowledge_bases if missing
+        for table in ["documents", "conversations", "knowledge_bases"]:
+            table_cols = {c["name"] for c in inspector.get_columns(table)}
+            if "user_id" not in table_cols:
+                conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN user_id INT"))
+
         conn.commit()
 
     # Ensure default KB exists
@@ -77,6 +96,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(documents_router)
 app.include_router(chat_router)
 app.include_router(settings_router)

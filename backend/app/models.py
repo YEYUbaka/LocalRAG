@@ -7,12 +7,22 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(50), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class KnowledgeBase(Base):
     __tablename__ = "knowledge_bases"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
+    user_id = Column(Integer, nullable=True)  # nullable for migration compatibility
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -21,6 +31,7 @@ class Document(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     kb_id = Column(Integer, default=1, nullable=False)
+    user_id = Column(Integer, nullable=True)  # nullable for migration compatibility
     filename = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
     file_size = Column(Integer, nullable=False)
@@ -43,6 +54,7 @@ class Conversation(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     title = Column(String(255), default="新对话")
+    user_id = Column(Integer, nullable=True)  # nullable for migration compatibility
     created_at = Column(DateTime, default=datetime.utcnow)
 
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.models import KnowledgeBase, Document
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/api/kb", tags=["knowledge_bases"])
 
@@ -26,8 +27,10 @@ class KBUpdate(BaseModel):
 
 
 @router.get("")
-def list_kbs(db: Session = Depends(get_db)):
-    kbs = db.query(KnowledgeBase).order_by(KnowledgeBase.id).all()
+def list_kbs(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    kbs = db.query(KnowledgeBase).filter(
+        (KnowledgeBase.user_id == user.id) | (KnowledgeBase.user_id.is_(None))
+    ).order_by(KnowledgeBase.id).all()
     result = []
     for kb in kbs:
         doc_count = db.query(Document).filter(Document.kb_id == kb.id).count()
@@ -42,8 +45,8 @@ def list_kbs(db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_kb(data: KBCreate, db: Session = Depends(get_db)):
-    kb = KnowledgeBase(name=data.name, description=data.description)
+def create_kb(data: KBCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    kb = KnowledgeBase(name=data.name, description=data.description, user_id=user.id)
     db.add(kb)
     db.commit()
     db.refresh(kb)
@@ -51,8 +54,11 @@ def create_kb(data: KBCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{kb_id}")
-def update_kb(kb_id: int, data: KBUpdate, db: Session = Depends(get_db)):
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+def update_kb(kb_id: int, data: KBUpdate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    kb = db.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id,
+        (KnowledgeBase.user_id == user.id) | (KnowledgeBase.user_id.is_(None))
+    ).first()
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
     if data.name is not None:
@@ -64,10 +70,13 @@ def update_kb(kb_id: int, data: KBUpdate, db: Session = Depends(get_db)):
 
 
 @router.delete("/{kb_id}")
-def delete_kb(kb_id: int, db: Session = Depends(get_db)):
+def delete_kb(kb_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     if kb_id == 1:
         raise HTTPException(status_code=400, detail="不能删除默认知识库")
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    kb = db.query(KnowledgeBase).filter(
+        KnowledgeBase.id == kb_id,
+        (KnowledgeBase.user_id == user.id) | (KnowledgeBase.user_id.is_(None))
+    ).first()
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
     doc_count = db.query(Document).filter(Document.kb_id == kb_id).count()

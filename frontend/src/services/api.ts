@@ -2,8 +2,20 @@ import type { Document, Conversation, Settings, DocumentContent, KnowledgeBase }
 
 const BASE = '/api';
 
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, options);
+  const headers = { ...getAuthHeaders(), ...options?.headers };
+  const res = await fetch(`${BASE}${url}`, { ...options, headers });
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.reload();
+    throw new Error('认证已过期，请重新登录');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || '请求失败');
@@ -86,4 +98,46 @@ export async function createKB(data: { name: string; description?: string }): Pr
 
 export async function deleteKB(id: number): Promise<void> {
   await request(`/kb/${id}`, { method: 'DELETE' });
+}
+
+// Auth
+export async function login(username: string, password: string): Promise<{ token: string; user: { id: number; username: string } }> {
+  const result = await request<{ token: string; user: { id: number; username: string } }>('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  localStorage.setItem('token', result.token);
+  localStorage.setItem('user', JSON.stringify(result.user));
+  return result;
+}
+
+export async function register(username: string, password: string): Promise<{ token: string; user: { id: number; username: string } }> {
+  const result = await request<{ token: string; user: { id: number; username: string } }>('/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  localStorage.setItem('token', result.token);
+  localStorage.setItem('user', JSON.stringify(result.user));
+  return result;
+}
+
+export function logout(): void {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+}
+
+export function getStoredUser(): { id: number; username: string } | null {
+  const userStr = localStorage.getItem('user');
+  if (!userStr) return null;
+  try {
+    return JSON.parse(userStr);
+  } catch {
+    return null;
+  }
+}
+
+export function isAuthenticated(): boolean {
+  return !!localStorage.getItem('token');
 }

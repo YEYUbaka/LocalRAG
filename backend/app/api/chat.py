@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, Message
+from app.auth import get_current_user
 from app.services.rag_service import rag_query
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -25,9 +26,9 @@ class ChatRequest(BaseModel):
 
 
 @router.post("")
-async def chat(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat(request: ChatRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
     return StreamingResponse(
-        rag_query(request.question, request.conversation_id, db, kb_id=request.kb_id),
+        rag_query(request.question, request.conversation_id, db, kb_id=request.kb_id, user_id=user.id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -38,8 +39,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/history")
-def list_conversations(db: Session = Depends(get_db)):
-    convs = db.query(Conversation).order_by(Conversation.created_at.desc()).all()
+def list_conversations(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    convs = db.query(Conversation).filter(Conversation.user_id == user.id).order_by(Conversation.created_at.desc()).all()
     return [
         {
             "id": c.id,
@@ -51,8 +52,8 @@ def list_conversations(db: Session = Depends(get_db)):
 
 
 @router.get("/{conversation_id}")
-def get_conversation(conversation_id: int, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+def get_conversation(conversation_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id, Conversation.user_id == user.id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
 
@@ -81,8 +82,8 @@ def get_conversation(conversation_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{conversation_id}")
-def delete_conversation(conversation_id: int, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+def delete_conversation(conversation_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id, Conversation.user_id == user.id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
     db.delete(conv)

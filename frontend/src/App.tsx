@@ -4,8 +4,12 @@ import { MenuOutlined } from '@ant-design/icons';
 import zhCN from 'antd/locale/zh_CN';
 import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
+import LoginPage from './components/LoginPage';
+import { isAuthenticated, logout, getStoredUser } from './services/api';
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(isAuthenticated());
+  const [username, setUsername] = useState(getStoredUser()?.username || '');
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [currentKbId, setCurrentKbId] = useState<number>(1);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -31,6 +35,26 @@ export default function App() {
     if (isMobile) setDrawerOpen(false);
   };
 
+  const handleLogin = (token: string, user: { id: number; username: string }) => {
+    setAuthenticated(true);
+    setUsername(user.username);
+  };
+
+  const handleLogout = () => {
+    logout();
+    setAuthenticated(false);
+    setUsername('');
+    setConversationId(null);
+  };
+
+  if (!authenticated) {
+    return (
+      <ConfigProvider locale={zhCN} theme={{ algorithm: theme.defaultAlgorithm }}>
+        <LoginPage onLogin={handleLogin} />
+      </ConfigProvider>
+    );
+  }
+
   const sidebarContent = (
     <>
       <div
@@ -39,9 +63,15 @@ export default function App() {
           borderBottom: '1px solid #f0f0f0',
           fontWeight: 600,
           fontSize: 16,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
-        LocalRAG
+        <span>LocalRAG</span>
+        <Button type="text" size="small" onClick={handleLogout}>
+          {username} (退出)
+        </Button>
       </div>
       <Sidebar
         currentConversationId={conversationId}

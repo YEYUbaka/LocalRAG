@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.models import Conversation, Message
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -17,8 +18,8 @@ def get_db():
 
 
 @router.get("/conversation/{conversation_id}")
-def export_conversation(conversation_id: int, db: Session = Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+def export_conversation(conversation_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id, Conversation.user_id == user.id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
 
