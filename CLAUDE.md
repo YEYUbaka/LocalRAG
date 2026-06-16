@@ -13,6 +13,8 @@ LocalRAG 是一个基于 RAG（检索增强生成）技术的本地个人知识�
 - **Embedding**: BAAI/bge-small-zh-v1.5（本地 CPU 运行，~90MB，通过 ModelScope 下载）
 - **LLM**: 通用 OpenAI 兼容架构，填入 base_url + api_key + model 即可调用（支持 Qwen/DeepSeek/Moonshot/Ollama 等）
 - **环境管理**: conda（环境名 `localrag`）
+- **认证**: JWT（python-jose + passlib/bcrypt）
+- **部署**: Docker Compose（backend + frontend/nginx + MySQL）
 
 ## Architecture
 
@@ -55,6 +57,12 @@ npm run dev
 
 # 创建 MySQL 数据库
 mysql -u root -p -e "CREATE DATABASE localrag CHARACTER SET utf8mb4;"
+
+# Docker 部署（全栈）
+docker-compose up --build
+
+# 运行测试
+cd backend && conda run -n localrag python -m pytest tests/ -v
 ```
 
 ## Key RAG Parameters
@@ -79,7 +87,8 @@ mysql -u root -p -e "CREATE DATABASE localrag CHARACTER SET utf8mb4;"
 
 ## Project Structure
 
-- `backend/app/api/` — FastAPI 路由（documents, chat, settings, knowledge_bases）
+- `backend/app/api/` — FastAPI 路由（documents, chat, settings, knowledge_bases, auth, export）
+- `backend/app/auth.py` — JWT 认证模块
 - `backend/app/services/` — 业务逻辑（document_service, rag_service, llm_service, query_rewrite）
 - `backend/app/core/` — 基础设施（embedding, vectorstore, bm25_search, reranker, prompts）
 - `backend/app/models.py` — SQLAlchemy 数据模型（Document, Conversation, Message）

@@ -20,8 +20,8 @@ LocalRAG 文档预览功能已完成（11 commits）。审计发现 CLAUDE.md �
 | Phase 3C | 文档重新处理 | ✅ 完成 |
 | Phase 3D | 对话导出 | ✅ 完成 |
 | Phase 4 | 测试覆盖（15 tests） | ✅ 完成 |
-| Phase 4 | Docker 部署 | ❌ 未开始 |
-| Phase 4 | 多用户支持 | ❌ 未开始 |
+| Phase 4 | Docker 部署 | ✅ 完成 |
+| Phase 4 | 多用户支持 | ✅ 完成 |
 
 ---
 
