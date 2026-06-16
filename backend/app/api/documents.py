@@ -63,9 +63,9 @@ async def upload_document(
     with open(file_path, "wb") as f:
         f.write(content)
 
-    # 4. Check for duplicates
+    # 4. Check for duplicates (per user)
     md5 = compute_md5(file_path)
-    existing = db.query(Document).filter(Document.md5_hash == md5).first()
+    existing = db.query(Document).filter(Document.md5_hash == md5, Document.user_id == user.id).first()
     if existing:
         file_path.unlink()
         raise HTTPException(status_code=409, detail=f"文档已存在: {existing.filename}")
@@ -92,10 +92,20 @@ async def upload_document(
 
 @router.get("")
 def list_documents(kb_id: int | None = Query(None), db: Session = Depends(get_db), user=Depends(get_current_user)):
-    query = db.query(Document).filter(Document.user_id == user.id)
+    from sqlalchemy import or_
+    # Show user's own docs + orphaned docs (user_id IS NULL)
+    query = db.query(Document).filter(or_(Document.user_id == user.id, Document.user_id.is_(None)))
     if kb_id is not None:
         query = query.filter(Document.kb_id == kb_id)
     docs = query.order_by(Document.created_at.desc()).all()
+    # Auto-claim orphaned documents
+    claimed = False
+    for d in docs:
+        if d.user_id is None:
+            d.user_id = user.id
+            claimed = True
+    if claimed:
+        db.commit()
     return [
         {
             "id": d.id,
