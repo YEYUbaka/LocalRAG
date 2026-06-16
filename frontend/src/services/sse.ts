@@ -17,9 +17,13 @@ export function streamChat(
   // We use fetch with ReadableStream for POST SSE since EventSource only supports GET
   const controller = new AbortController();
 
+  const token = localStorage.getItem('token');
   fetch('/api/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ question, conversation_id: conversationId, kb_id: kbId }),
     signal: controller.signal,
   })
