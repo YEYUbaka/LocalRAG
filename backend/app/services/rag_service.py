@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.core.vectorstore import hybrid_search
 from app.core.prompts import build_rag_prompt
-from app.services.llm_service import get_chat_model
+from app.services.llm_service import get_chat_model, get_thinking_model
+from app.services.web_search_service import web_search
 from app.config import settings
 from app.models import Conversation, Message
 
@@ -26,6 +27,25 @@ def estimate_tokens(text: str) -> int:
     chinese_chars = sum(1 for c in text if '一' <= c <= '鿿')
     other_chars = len(text) - chinese_chars
     return chinese_chars // 2 + other_chars // 4 + 1
+
+
+async def _try_web_search(question: str, sources: list[dict], kb_id: int | None) -> list[dict]:
+    """当知识库无匹配结果时，尝试联网搜索。"""
+    if kb_id is not None and not sources and settings.web_search_enabled:
+        web_results = await web_search(question)
+        if web_results:
+            sources = [
+                {
+                    "id": f"web_{i}",
+                    "document": f"{r['title']}\n{r['snippet']}",
+                    "metadata": {"filename": r["title"], "page": None, "doc_id": None},
+                    "type": "web",
+                    "url": r["url"],
+                }
+                for i, r in enumerate(web_results)
+            ]
+            logger.info(f"Web search returned {len(sources)} results for: {question}")
+    return sources
 
 
 def get_conversation_history(db: Session, conversation_id: int, max_tokens: int | None = None) -> list:
@@ -97,6 +117,8 @@ async def rag_query(
         else:
             sources = hybrid_search(question, kb_id=kb_id)
 
+        sources = await _try_web_search(question, sources, kb_id)
+
         # 计算 token 预算
         context_window = getattr(settings, 'context_window', DEFAULT_CONTEXT_WINDOW)
         total_budget = int(context_window * TOKEN_BUDGET_RATIO)
@@ -143,12 +165,16 @@ async def rag_query(
         sources_data = []
         for src in sources:
             meta = src["metadata"]
-            sources_data.append({
+            source_item = {
                 "file": meta.get("filename", "未知文件"),
                 "page": meta.get("page"),
                 "snippet": src["document"][:200],
                 "doc_id": meta.get("doc_id"),
-            })
+                "type": src.get("type", "document"),
+            }
+            if src.get("url"):
+                source_item["url"] = src["url"]
+            sources_data.append(source_item)
 
         yield f"event: sources\ndata: {json.dumps({'sources': sources_data}, ensure_ascii=False)}\n\n"
 
@@ -168,6 +194,247 @@ async def rag_query(
         error_message = "抱歉，处理您的问题时出现错误"
         if "timeout" in str(e).lower() or "超时" in str(e):
             error_message = "LLM 服务响应超时，请稍后重试"
+        elif "rate" in str(e).lower() or "limit" in str(e).lower():
+            error_message = "LLM 服务请求过于频繁，请稍后重试"
+        elif "auth" in str(e).lower() or "key" in str(e).lower():
+            error_message = "LLM API Key 无效，请检查设置"
+        yield f"event: error\ndata: {json.dumps({'message': error_message}, ensure_ascii=False)}\n\n"
+
+
+async def rag_query_with_image(
+    question: str,
+    image_base64: str,
+    conversation_id: int | None,
+    db: Session,
+    kb_id: int | None = None,
+    user_id: int | None = None,
+) -> AsyncGenerator[str, None]:
+    """图片理解模式的 RAG 查询，使用视觉模型分析图片"""
+    try:
+        from app.services.llm_service import get_vision_model
+        from langchain_core.messages import HumanMessage
+
+        # 发送处理开始事件
+        yield f"event: thinking\ndata: {json.dumps({'status': 'started', 'message': '正在分析图片...'}, ensure_ascii=False)}\n\n"
+
+        # 构建包含图片的消息
+        # LangChain 支持多模态消息格式
+        content = [
+            {"type": "text", "text": question},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": image_base64,
+                },
+            },
+        ]
+
+        # 如果有知识库上下文，先检索相关内容
+        sources = []
+        if kb_id:
+            sources = hybrid_search(question, kb_id=kb_id)
+
+        # 添加知识库上下文到问题中
+        if sources:
+            context = "\n\n".join([s["document"][:500] for s in sources[:3]])
+            content[0]["text"] = f"基于以下知识库内容回答问题：\n\n{context}\n\n问题：{question}"
+
+        # 处理会话历史
+        if conversation_id:
+            history = get_conversation_history(db, conversation_id)
+        else:
+            conversation = Conversation(title=f"[图片分析] {question[:50]}", user_id=user_id)
+            db.add(conversation)
+            db.commit()
+            db.refresh(conversation)
+            conversation_id = conversation.id
+            history = []
+
+        # 保存用户消息
+        user_msg = Message(
+            conversation_id=conversation_id,
+            role="user",
+            content=f"[图片分析] {question}",
+        )
+        db.add(user_msg)
+        db.commit()
+
+        # 使用视觉模型
+        model = get_vision_model()
+
+        # 构建消息列表
+        messages = []
+        for msg in history:
+            if msg.role == "user":
+                messages.append(HumanMessage(content=msg.content))
+            # 助手消息暂时跳过，因为图片消息格式特殊
+
+        messages.append(HumanMessage(content=content))
+
+        # 发送处理进度
+        yield f"event: thinking\ndata: {json.dumps({'status': 'analyzing', 'message': '视觉模型正在分析图片...'}, ensure_ascii=False)}\n\n"
+
+        full_answer = ""
+        async for chunk in model.astream(messages):
+            text = chunk.content
+            if text:
+                full_answer += text
+                yield f"event: token\ndata: {json.dumps({'content': text}, ensure_ascii=False)}\n\n"
+
+        if not full_answer:
+            yield f"event: error\ndata: {json.dumps({'message': '模型未返回有效回答，请尝试重新提问'}, ensure_ascii=False)}\n\n"
+            return
+
+        # 发送来源信息
+        sources_data = []
+        for src in sources:
+            meta = src["metadata"]
+            sources_data.append({
+                "file": meta.get("filename", "未知文件"),
+                "page": meta.get("page"),
+                "snippet": src["document"][:200],
+                "doc_id": meta.get("doc_id"),
+            })
+
+        if sources_data:
+            yield f"event: sources\ndata: {json.dumps({'sources': sources_data}, ensure_ascii=False)}\n\n"
+
+        # 保存助手消息
+        assistant_msg = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=full_answer,
+            sources=sources_data if sources_data else None,
+        )
+        db.add(assistant_msg)
+        db.commit()
+
+        yield f"event: done\ndata: {json.dumps({'conversation_id': conversation_id})}\n\n"
+
+    except Exception as e:
+        logger.error(f"图片理解查询失败: {e}", exc_info=True)
+        error_message = "抱歉，图片分析时出现错误"
+        if "timeout" in str(e).lower() or "超时" in str(e):
+            error_message = "图片分析超时，请稍后重试"
+        elif "rate" in str(e).lower() or "limit" in str(e).lower():
+            error_message = "LLM 服务请求过于频繁，请稍后重试"
+        elif "auth" in str(e).lower() or "key" in str(e).lower():
+            error_message = "LLM API Key 无效，请检查设置"
+        yield f"event: error\ndata: {json.dumps({'message': error_message}, ensure_ascii=False)}\n\n"
+
+
+async def rag_query_with_thinking(
+    question: str,
+    conversation_id: int | None,
+    db: Session,
+    kb_id: int | None = None,
+    user_id: int | None = None,
+) -> AsyncGenerator[str, None]:
+    """深度思考模式的 RAG 查询，使用更强大的模型和更长的推理时间"""
+    try:
+        # 发送思考开始事件
+        yield f"event: thinking\ndata: {json.dumps({'status': 'started', 'message': '正在深度思考中...'}, ensure_ascii=False)}\n\n"
+
+        # Multi-query search
+        if settings.query_rewrite_enabled:
+            from app.services.query_rewrite import rewrite_query
+            queries = await rewrite_query(question)
+
+            all_sources = []
+            seen_ids: set[str] = set()
+            for q in queries:
+                results = hybrid_search(q, kb_id=kb_id)
+                for r in results:
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        all_sources.append(r)
+
+            sources = all_sources[:settings.rerank_top_k]
+        else:
+            sources = hybrid_search(question, kb_id=kb_id)
+
+        sources = await _try_web_search(question, sources, kb_id)
+
+        # 计算 token 预算
+        context_window = getattr(settings, 'context_window', DEFAULT_CONTEXT_WINDOW)
+        total_budget = int(context_window * TOKEN_BUDGET_RATIO)
+
+        sources_text = " ".join(s["document"] for s in sources)
+        sources_tokens = estimate_tokens(sources_text)
+        history_budget = total_budget - sources_tokens
+
+        if conversation_id:
+            history = get_conversation_history(db, conversation_id, max_tokens=history_budget)
+        else:
+            conversation = Conversation(title=f"[深度思考] {question[:50]}", user_id=user_id)
+            db.add(conversation)
+            db.commit()
+            db.refresh(conversation)
+            conversation_id = conversation.id
+            history = []
+
+        user_msg = Message(
+            conversation_id=conversation_id,
+            role="user",
+            content=f"[深度思考模式] {question}",
+        )
+        db.add(user_msg)
+        db.commit()
+
+        messages = build_messages(question, sources, history)
+
+        # 使用深度思考模型
+        model = get_thinking_model()
+
+        # 发送思考进度
+        yield f"event: thinking\ndata: {json.dumps({'status': 'reasoning', 'message': '正在深度推理中，请耐心等待...'}, ensure_ascii=False)}\n\n"
+
+        full_answer = ""
+        async for chunk in model.astream(messages):
+            content = chunk.content
+            if content:
+                full_answer += content
+                yield f"event: token\ndata: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
+
+        if not full_answer:
+            yield f"event: error\ndata: {json.dumps({'message': '模型未返回有效回答，请尝试重新提问'}, ensure_ascii=False)}\n\n"
+            return
+
+        sources_data = []
+        for src in sources:
+            meta = src["metadata"]
+            source_item = {
+                "file": meta.get("filename", "未知文件"),
+                "page": meta.get("page"),
+                "snippet": src["document"][:200],
+                "doc_id": meta.get("doc_id"),
+                "type": src.get("type", "document"),
+            }
+            if src.get("url"):
+                source_item["url"] = src["url"]
+            sources_data.append(source_item)
+
+        yield f"event: sources\ndata: {json.dumps({'sources': sources_data}, ensure_ascii=False)}\n\n"
+
+        # 发送思考完成
+        yield f"event: thinking\ndata: {json.dumps({'status': 'completed', 'message': '深度思考完成'}, ensure_ascii=False)}\n\n"
+
+        assistant_msg = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=full_answer,
+            sources=sources_data,
+        )
+        db.add(assistant_msg)
+        db.commit()
+
+        yield f"event: done\ndata: {json.dumps({'conversation_id': conversation_id})}\n\n"
+
+    except Exception as e:
+        logger.error(f"深度思考查询失败: {e}", exc_info=True)
+        error_message = "抱歉，深度思考处理时出现错误"
+        if "timeout" in str(e).lower() or "超时" in str(e):
+            error_message = "深度思考超时，请稍后重试（复杂问题可能需要更长时间）"
         elif "rate" in str(e).lower() or "limit" in str(e).lower():
             error_message = "LLM 服务请求过于频繁，请稍后重试"
         elif "auth" in str(e).lower() or "key" in str(e).lower():
