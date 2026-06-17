@@ -22,7 +22,9 @@ class SettingsResponse(BaseModel):
     retrieval_top_k: int
     rerank_top_k: int
     rerank_enabled: bool
+    rerank_threshold: float
     query_rewrite_enabled: bool
+    web_search_enabled: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -39,7 +41,9 @@ class SettingsUpdate(BaseModel):
     retrieval_top_k: int | None = None
     rerank_top_k: int | None = None
     rerank_enabled: bool | None = None
+    rerank_threshold: float | None = None
     query_rewrite_enabled: bool | None = None
+    web_search_enabled: bool | None = None
 
 
 def _build_response() -> SettingsResponse:
@@ -59,7 +63,9 @@ def _build_response() -> SettingsResponse:
         retrieval_top_k=settings.retrieval_top_k,
         rerank_top_k=settings.rerank_top_k,
         rerank_enabled=settings.rerank_enabled,
+        rerank_threshold=settings.rerank_threshold,
         query_rewrite_enabled=settings.query_rewrite_enabled,
+        web_search_enabled=settings.web_search_enabled,
     )
 
 
@@ -96,8 +102,12 @@ def update_settings(update: SettingsUpdate):
         settings.rerank_top_k = update.rerank_top_k
     if update.rerank_enabled is not None:
         settings.rerank_enabled = update.rerank_enabled
+    if update.rerank_threshold is not None:
+        settings.rerank_threshold = update.rerank_threshold
     if update.query_rewrite_enabled is not None:
         settings.query_rewrite_enabled = update.query_rewrite_enabled
+    if update.web_search_enabled is not None:
+        settings.web_search_enabled = update.web_search_enabled
 
     _save_overrides(settings)
     return _build_response()
