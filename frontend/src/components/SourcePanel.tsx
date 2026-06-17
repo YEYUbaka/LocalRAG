@@ -1,5 +1,5 @@
 import { Tag, Popover } from 'antd';
-import { FileTextOutlined, GlobeOutlined } from '@ant-design/icons';
+import { FileTextOutlined, GlobalOutlined } from '@ant-design/icons';
 import type { Source } from '../types';
 
 interface Props {
@@ -23,7 +23,7 @@ export default function SourcePanel({ sources, onSourceClick }: Props) {
 
         const tag = (
           <Tag
-            icon={isWeb ? <GlobeOutlined /> : <FileTextOutlined />}
+            icon={isWeb ? <GlobalOutlined /> : <FileTextOutlined />}
             color={isWeb ? 'green' : 'blue'}
             style={{ cursor: 'pointer', marginBottom: 4 }}
             onClick={() => {
