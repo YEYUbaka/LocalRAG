@@ -12,7 +12,9 @@ export interface Source {
   file: string;
   page: number | null;
   snippet: string;
-  doc_id: number;
+  doc_id: number | null;
+  type?: 'document' | 'web';
+  url?: string;
 }
 
 export interface Message {
