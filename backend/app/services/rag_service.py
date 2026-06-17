@@ -30,8 +30,33 @@ def estimate_tokens(text: str) -> int:
 
 
 async def _try_web_search(question: str, sources: list[dict], kb_id: int | None) -> list[dict]:
-    """当知识库无匹配结果时，尝试联网搜索。"""
-    if kb_id is not None and not sources and settings.web_search_enabled:
+    """当知识库无匹配结果时，尝试联网搜索。
+
+    触发条件（满足任一）：
+    1. sources 为空
+    2. sources 中所有结果的 rerank 分数低于阈值（说明检索结果不相关）
+    """
+    if kb_id is None or not settings.web_search_enabled:
+        return sources
+
+    # 检查是否需要联网搜索：sources 为空，或所有结果 rerank 分数过低
+    need_web = False
+    if not sources:
+        need_web = True
+    elif settings.rerank_enabled and settings.rerank_threshold > 0:
+        # 检查是否有高质量结果（rerank 分数 >= 阈值）
+        has_high_quality = any(
+            src.get("rerank_score", float("inf")) >= settings.rerank_threshold
+            for src in sources
+        )
+        if not has_high_quality:
+            need_web = True
+            logger.info(
+                f"All {len(sources)} sources below rerank threshold "
+                f"({settings.rerank_threshold}), triggering web search"
+            )
+
+    if need_web:
         web_results = await web_search(question)
         if web_results:
             sources = [
