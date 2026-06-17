@@ -8,7 +8,7 @@ PERSISTED_FIELDS = {
     "top_k", "temperature", "max_tokens", "context_window",
     "similarity_threshold", "max_upload_size",
     "hybrid_search", "bm25_weight", "retrieval_top_k", "rerank_top_k",
-    "rerank_enabled", "query_rewrite_enabled",
+    "rerank_enabled", "rerank_threshold", "query_rewrite_enabled",
 }
 
 
@@ -42,10 +42,11 @@ class Settings(BaseSettings):
 
     # Reranker
     rerank_enabled: bool = True
+    rerank_threshold: float = 1.0
 
     # Query Rewrite
     query_rewrite_enabled: bool = True
-    reranker_model_path: str = str(Path(__file__).parent.parent.parent / "data" / "models" / "bge-reranker-v2-m3")
+    reranker_model_path: str = str(Path(__file__).parent.parent.parent / "data" / "models" / "BAAI" / "bge-reranker-v2-m3")
 
     # Data
     data_dir: str = "./data"
