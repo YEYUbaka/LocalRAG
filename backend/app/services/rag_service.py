@@ -45,8 +45,9 @@ async def _try_web_search(question: str, sources: list[dict], kb_id: int | None)
         need_web = True
     elif settings.rerank_enabled and settings.rerank_threshold > 0:
         # 检查是否有高质量结果（rerank 分数 >= 阈值）
+        # 注意：没有 rerank_score 的结果视为低质量（reranker 可能失败了）
         has_high_quality = any(
-            src.get("rerank_score", float("inf")) >= settings.rerank_threshold
+            src.get("rerank_score", -999.0) >= settings.rerank_threshold
             for src in sources
         )
         if not has_high_quality:
