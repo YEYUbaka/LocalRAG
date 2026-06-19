@@ -1,4 +1,4 @@
-import type { Document, Conversation, Settings, DocumentContent, KnowledgeBase } from '../types';
+import type { Document, Conversation, Settings, DocumentContent, KnowledgeBase, Tag } from '../types';
 
 const BASE = '/api';
 
@@ -127,6 +127,31 @@ export async function createKB(data: { name: string; description?: string }): Pr
 
 export async function deleteKB(id: number): Promise<void> {
   await request(`/kb/${id}`, { method: 'DELETE' });
+}
+
+// Tags
+export async function listTags(): Promise<Tag[]> {
+  return request('/tags');
+}
+
+export async function createTag(name: string, color: string = 'default'): Promise<Tag> {
+  return request('/tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, color }),
+  });
+}
+
+export async function deleteTag(id: number): Promise<void> {
+  await request(`/tags/${id}`, { method: 'DELETE' });
+}
+
+export async function attachTag(documentId: number, tagId: number): Promise<void> {
+  await request(`/tags/attach?document_id=${documentId}&tag_id=${tagId}`, { method: 'POST' });
+}
+
+export async function detachTag(documentId: number, tagId: number): Promise<void> {
+  await request(`/tags/detach?document_id=${documentId}&tag_id=${tagId}`, { method: 'POST' });
 }
 
 // Auth

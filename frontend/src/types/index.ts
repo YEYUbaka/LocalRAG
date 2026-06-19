@@ -4,6 +4,10 @@ export interface TagInfo {
   color: string;
 }
 
+export interface Tag extends TagInfo {
+  doc_count: number;
+}
+
 export interface Document {
   id: number;
   filename: string;
