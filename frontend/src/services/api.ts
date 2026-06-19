@@ -75,6 +75,30 @@ export async function getSettings(): Promise<Settings> {
   return request('/settings');
 }
 
+// Image Analysis
+export async function analyzeImage(
+  question: string,
+  imageBase64: string,
+  conversationId: number | null,
+  kbId?: number | null,
+): Promise<Response> {
+  const token = localStorage.getItem('token');
+  const res = await fetch('/api/chat/image', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      question,
+      image_base64: imageBase64,
+      conversation_id: conversationId,
+      kb_id: kbId,
+    }),
+  });
+  return res;
+}
+
 export async function updateSettings(data: Partial<Settings> & { llm_api_key?: string }): Promise<Settings> {
   return request('/settings', {
     method: 'PUT',
