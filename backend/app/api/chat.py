@@ -114,6 +114,19 @@ async def chat_with_image(
     user=Depends(get_current_user),
 ):
     """图片理解 - 使用视觉模型分析图片"""
+    # 检查 base64 图片大小（解码后最大 10MB）
+    try:
+        base64_data = request.image_base64
+        if "," in base64_data:
+            base64_data = base64_data.split(",", 1)[1]
+        image_bytes = base64.b64decode(base64_data)
+        if len(image_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="图片大小不能超过 10MB")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="无效的 Base64 图片数据")
+
     return StreamingResponse(
         rag_query_with_image(
             request.question,
