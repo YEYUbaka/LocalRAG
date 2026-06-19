@@ -117,6 +117,32 @@ def build_messages(question: str, sources: list[dict], history: list) -> list:
     return langchain_messages
 
 
+async def _retrieve_sources(
+    question: str,
+    kb_id: int | None,
+) -> list[dict]:
+    """公共检索逻辑：查询改写 + 混合搜索 + 联网回退。"""
+    if settings.query_rewrite_enabled:
+        from app.services.query_rewrite import rewrite_query
+        queries = await rewrite_query(question)
+
+        all_sources = []
+        seen_ids: set[str] = set()
+        for q in queries:
+            results = hybrid_search(q, kb_id=kb_id)
+            for r in results:
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    all_sources.append(r)
+
+        sources = all_sources[:settings.rerank_top_k]
+    else:
+        sources = hybrid_search(question, kb_id=kb_id)
+
+    sources = await _try_web_search(question, sources, kb_id)
+    return sources
+
+
 async def rag_query(
     question: str,
     conversation_id: int | None,
@@ -125,25 +151,7 @@ async def rag_query(
     user_id: int | None = None,
 ) -> AsyncGenerator[str, None]:
     try:
-        # Multi-query search: rewrite query and search with each variant
-        if settings.query_rewrite_enabled:
-            from app.services.query_rewrite import rewrite_query
-            queries = await rewrite_query(question)
-
-            all_sources = []
-            seen_ids: set[str] = set()
-            for q in queries:
-                results = hybrid_search(q, kb_id=kb_id)
-                for r in results:
-                    if r["id"] not in seen_ids:
-                        seen_ids.add(r["id"])
-                        all_sources.append(r)
-
-            sources = all_sources[:settings.rerank_top_k]
-        else:
-            sources = hybrid_search(question, kb_id=kb_id)
-
-        sources = await _try_web_search(question, sources, kb_id)
+        sources = await _retrieve_sources(question, kb_id)
 
         # 计算 token 预算
         context_window = getattr(settings, 'context_window', DEFAULT_CONTEXT_WINDOW)
@@ -362,25 +370,7 @@ async def rag_query_with_thinking(
         # 发送思考开始事件
         yield f"event: thinking\ndata: {json.dumps({'status': 'started', 'message': '正在深度思考中...'}, ensure_ascii=False)}\n\n"
 
-        # Multi-query search
-        if settings.query_rewrite_enabled:
-            from app.services.query_rewrite import rewrite_query
-            queries = await rewrite_query(question)
-
-            all_sources = []
-            seen_ids: set[str] = set()
-            for q in queries:
-                results = hybrid_search(q, kb_id=kb_id)
-                for r in results:
-                    if r["id"] not in seen_ids:
-                        seen_ids.add(r["id"])
-                        all_sources.append(r)
-
-            sources = all_sources[:settings.rerank_top_k]
-        else:
-            sources = hybrid_search(question, kb_id=kb_id)
-
-        sources = await _try_web_search(question, sources, kb_id)
+        sources = await _retrieve_sources(question, kb_id)
 
         # 计算 token 预算
         context_window = getattr(settings, 'context_window', DEFAULT_CONTEXT_WINDOW)
