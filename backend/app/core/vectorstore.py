@@ -101,7 +101,7 @@ def rrf_fusion(
             doc_lookup[doc_id] = {
                 "id": doc_id,
                 "document": item["document"],
-                "metadata": {"doc_id": item.get("doc_id")},
+                "metadata": item.get("metadata", {"doc_id": item.get("doc_id")}),
             }
         scores[doc_id] = scores.get(doc_id, 0) + bm25_weight / (k + rank)
 
@@ -143,6 +143,10 @@ def hybrid_search(query: str, kb_id: int | None = None) -> list[dict]:
             for item, score in zip(fused, scores):
                 item["rerank_score"] = score
             fused.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)
+
+            # Filter by rerank score threshold
+            if settings.rerank_threshold > 0:
+                fused = [item for item in fused if item.get("rerank_score", 0) >= settings.rerank_threshold]
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Reranking failed, using RRF order: {e}")

@@ -16,10 +16,12 @@ logger = logging.getLogger(__name__)
 
 # doc_id -> list of chunk texts
 _chunk_store: dict[int, list[str]] = {}
+# doc_id -> list of chunk metadata
+_metadata_store: dict[int, list[dict]] = {}
 # doc_id -> kb_id mapping
 _kb_map: dict[int, int] = {}
 _bm25_index: BM25Okapi | None = None
-_corpus: list[tuple[int, str]] = []  # [(doc_id, chunk_text), ...]
+_corpus: list[tuple[int, str, dict]] = []  # [(doc_id, chunk_text, metadata), ...]
 _dirty = True
 
 
@@ -33,25 +35,28 @@ def _rebuild_index() -> None:
     global _bm25_index, _corpus, _dirty
     _corpus = []
     for doc_id, chunks in _chunk_store.items():
-        for chunk in chunks:
-            _corpus.append((doc_id, chunk))
+        metas = _metadata_store.get(doc_id, [{}] * len(chunks))
+        for i, chunk in enumerate(chunks):
+            meta = metas[i] if i < len(metas) else {}
+            _corpus.append((doc_id, chunk, meta))
 
     if not _corpus:
         _bm25_index = None
         _dirty = False
         return
 
-    tokenized = [_tokenize(text) for _, text in _corpus]
+    tokenized = [_tokenize(text) for _, text, _ in _corpus]
     _bm25_index = BM25Okapi(tokenized)
     _dirty = False
     logger.info(f"BM25 index rebuilt: {len(_corpus)} chunks from {len(_chunk_store)} documents")
 
 
-def add_document_chunks(doc_id: int, chunks: list[str], kb_id: int = 1) -> None:
+def add_document_chunks(doc_id: int, chunks: list[str], kb_id: int = 1, metadatas: list[dict] | None = None) -> None:
     """Add chunks for a document to the BM25 index."""
     global _dirty
     try:
         _chunk_store[doc_id] = chunks
+        _metadata_store[doc_id] = metadatas or [{}] * len(chunks)
         _kb_map[doc_id] = kb_id
         _dirty = True
     except Exception as e:
@@ -65,6 +70,7 @@ def remove_document(doc_id: int) -> None:
         if doc_id in _chunk_store:
             del _chunk_store[doc_id]
             _dirty = True
+        _metadata_store.pop(doc_id, None)
         _kb_map.pop(doc_id, None)
     except Exception as e:
         logger.warning(f"BM25: failed to remove doc {doc_id}: {e}")
@@ -89,7 +95,7 @@ def bm25_search(query: str, top_k: int = 20, kb_id: int | None = None) -> list[d
     for idx in ranked_indices:
         if scores[idx] <= 0:
             continue
-        doc_id, text = _corpus[idx]
+        doc_id, text, meta = _corpus[idx]
         if kb_id is not None and _kb_map.get(doc_id) != kb_id:
             continue
         results.append({
@@ -97,6 +103,7 @@ def bm25_search(query: str, top_k: int = 20, kb_id: int | None = None) -> list[d
             "document": text,
             "doc_id": doc_id,
             "bm25_score": float(scores[idx]),
+            "metadata": meta,
         })
         if len(results) >= top_k:
             break
@@ -118,8 +125,8 @@ def rebuild_from_db(db_session_factory) -> None:
                     file_path = Path(doc.file_path)
                     if file_path.exists():
                         raw_docs = parse_document(file_path)
-                        texts, _ = split_documents(raw_docs, doc.filename)
-                        add_document_chunks(doc.id, texts, kb_id=doc.kb_id)
+                        texts, metadatas = split_documents(raw_docs, doc.filename)
+                        add_document_chunks(doc.id, texts, kb_id=doc.kb_id, metadatas=metadatas)
                 except Exception as e:
                     logger.warning(f"BM25: failed to rebuild for doc {doc.id}: {e}")
         _rebuild_index()

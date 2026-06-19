@@ -110,7 +110,7 @@ def process_document(doc_id: int, db_session_factory) -> None:
         # Sync BM25 index
         try:
             from app.core.bm25_search import add_document_chunks
-            add_document_chunks(doc_id, texts, kb_id=doc.kb_id)
+            add_document_chunks(doc_id, texts, kb_id=doc.kb_id, metadatas=metadatas)
         except Exception as e:
             logger.warning(f"BM25 sync failed for doc {doc_id}: {e}")
 
