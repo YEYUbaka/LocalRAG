@@ -41,6 +41,7 @@ with (
     from app.api.chat import get_db as chat_get_db
     from app.api.knowledge_bases import get_db as kb_get_db
     from app.api.export import get_db as export_get_db
+    from app.api.tags import get_db as tags_get_db
     from app.auth import get_current_user
 
 
@@ -51,6 +52,7 @@ def client():
     app.dependency_overrides[chat_get_db] = _mock_get_db
     app.dependency_overrides[kb_get_db] = _mock_get_db
     app.dependency_overrides[export_get_db] = _mock_get_db
+    app.dependency_overrides[tags_get_db] = _mock_get_db
     app.dependency_overrides[get_current_user] = _mock_get_current_user
 
     from fastapi.testclient import TestClient
