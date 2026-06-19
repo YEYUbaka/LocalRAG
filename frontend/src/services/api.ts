@@ -31,9 +31,14 @@ export async function uploadDocument(file: File, kbId: number = 1): Promise<{ id
   return request('/documents/upload', { method: 'POST', body: form });
 }
 
-export async function listDocuments(kbId?: number): Promise<Document[]> {
-  const params = kbId !== undefined ? `?kb_id=${kbId}` : '';
-  return request(`/documents${params}`);
+export async function listDocuments(opts?: { kbId?: number; search?: string; status?: string; tagId?: number }): Promise<Document[]> {
+  const params = new URLSearchParams();
+  if (opts?.kbId !== undefined) params.set('kb_id', String(opts.kbId));
+  if (opts?.search) params.set('search', opts.search);
+  if (opts?.status) params.set('status', opts.status);
+  if (opts?.tagId !== undefined) params.set('tag_id', String(opts.tagId));
+  const qs = params.toString();
+  return request(`/documents${qs ? '?' + qs : ''}`);
 }
 
 export async function getDocumentStatus(id: number): Promise<{ id: number; status: string; error_message: string | null }> {

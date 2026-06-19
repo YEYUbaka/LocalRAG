@@ -3,14 +3,35 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Document
+from app.models import Document, Tag, DocumentTag
 from app.auth import get_current_user
 from app.services.document_service import compute_md5, process_document, delete_document, LOADER_MAP
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+
+class TagInfo(BaseModel):
+    id: int
+    name: str
+    color: str
+
+
+class DocumentResponse(BaseModel):
+    id: int
+    filename: str
+    file_size: int
+    status: str
+    error_message: str | None
+    created_at: str | None
+    chunk_count: int
+    tags: list[TagInfo] = []
+
+    class Config:
+        from_attributes = True
 
 
 def get_db():
@@ -20,6 +41,22 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _doc_to_response(doc: Document) -> dict:
+    tags = []
+    for dt in doc.tags:
+        tags.append({"id": dt.tag.id, "name": dt.tag.name, "color": dt.tag.color})
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "file_size": doc.file_size,
+        "status": doc.status,
+        "error_message": doc.error_message,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "chunk_count": doc.chunk_count,
+        "tags": tags,
+    }
 
 
 def _sanitize_filename(filename: str) -> str:
@@ -90,13 +127,34 @@ async def upload_document(
     return {"id": doc.id, "filename": doc.filename, "status": doc.status}
 
 
-@router.get("")
-def list_documents(kb_id: int | None = Query(None), db: Session = Depends(get_db), user=Depends(get_current_user)):
+@router.get("", response_model=list[DocumentResponse])
+def list_documents(
+    kb_id: int | None = Query(None),
+    search: str | None = None,
+    status: str | None = None,
+    tag_id: int | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
     from sqlalchemy import or_
     # Show user's own docs + orphaned docs (user_id IS NULL)
     query = db.query(Document).filter(or_(Document.user_id == user.id, Document.user_id.is_(None)))
     if kb_id is not None:
         query = query.filter(Document.kb_id == kb_id)
+
+    if status:
+        query = query.filter(Document.status == status)
+
+    if tag_id:
+        doc_ids = db.query(DocumentTag.document_id).filter(DocumentTag.tag_id == tag_id).subquery()
+        query = query.filter(Document.id.in_(doc_ids))
+
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(
+            or_(Document.filename.like(pattern), Document.parsed_content.like(pattern))
+        )
+
     docs = query.order_by(Document.created_at.desc()).all()
     # Auto-claim orphaned documents
     claimed = False
@@ -106,18 +164,7 @@ def list_documents(kb_id: int | None = Query(None), db: Session = Depends(get_db
             claimed = True
     if claimed:
         db.commit()
-    return [
-        {
-            "id": d.id,
-            "filename": d.filename,
-            "file_size": d.file_size,
-            "status": d.status,
-            "error_message": d.error_message,
-            "chunk_count": d.chunk_count,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
-        }
-        for d in docs
-    ]
+    return [_doc_to_response(d) for d in docs]
 
 
 @router.get("/{doc_id}/content")

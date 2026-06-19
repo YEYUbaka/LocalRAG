@@ -32,7 +32,7 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
 
   const loadDocs = async () => {
     try {
-      const data = await listDocuments(currentKbId);
+      const data = await listDocuments({ kbId: currentKbId });
       setDocs(data);
     } catch (e: any) {
       message.error(e.message);

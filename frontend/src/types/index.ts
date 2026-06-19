@@ -1,3 +1,9 @@
+export interface TagInfo {
+  id: number;
+  name: string;
+  color: string;
+}
+
 export interface Document {
   id: number;
   filename: string;
@@ -6,6 +12,7 @@ export interface Document {
   error_message: string | null;
   created_at: string | null;
   chunk_count: number;
+  tags: TagInfo[];
 }
 
 export interface Source {
