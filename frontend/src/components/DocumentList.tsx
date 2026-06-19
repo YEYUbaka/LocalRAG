@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Button, Upload, message, Tag, Popconfirm, Typography, Space, Input, Select, Popover, Checkbox, Spin } from 'antd';
+import { Button, Upload, message, Tag, Popconfirm, Typography, Space, Input, Select, Popover, Checkbox, Tabs, InputNumber } from 'antd';
 import {
   UploadOutlined, DeleteOutlined, FilePdfOutlined, FileTextOutlined,
   FileWordOutlined, InboxOutlined, ReloadOutlined, SearchOutlined,
-  TagsOutlined, PlusOutlined, CloseCircleFilled,
+  TagsOutlined, PlusOutlined, CloseCircleFilled, LinkOutlined, GlobalOutlined,
 } from '@ant-design/icons';
 import type { Document, Tag as TagType } from '../types';
-import { listDocuments, uploadDocument, deleteDocument, getDocumentStatus, reprocessDocument, listTags, createTag, attachTag, detachTag } from '../services/api';
+import { listDocuments, uploadDocument, deleteDocument, getDocumentStatus, reprocessDocument, listTags, createTag, attachTag, detachTag, importUrl, importBatchUrls, importCrawlSite } from '../services/api';
 
 const { Dragger } = Upload;
 const { Text } = Typography;
@@ -42,6 +42,12 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
   const [tagPopoverDoc, setTagPopoverDoc] = useState<number | null>(null);
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('default');
+  const [urlInput, setUrlInput] = useState('');
+  const [batchUrls, setBatchUrls] = useState('');
+  const [crawlUrl, setCrawlUrl] = useState('');
+  const [maxPages, setMaxPages] = useState(20);
+  const [maxDepth, setMaxDepth] = useState(2);
+  const [importing, setImporting] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const loadDocs = useCallback(async () => {
@@ -164,6 +170,55 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
     }
   };
 
+  const handleImportUrl = async () => {
+    if (!urlInput.trim()) return;
+    setImporting(true);
+    try {
+      const result = await importUrl(urlInput.trim(), currentKbId);
+      message.success(`已提交: ${result.filename}`);
+      setUrlInput('');
+      await loadDocs();
+      pollStatus(result.id);
+    } catch (e: any) {
+      message.error(e.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleBatchImport = async () => {
+    const urls = batchUrls.split('\n').map(u => u.trim()).filter(Boolean);
+    if (urls.length === 0) return;
+    setImporting(true);
+    try {
+      const result = await importBatchUrls(urls, currentKbId);
+      message.success(`已提交 ${result.imported} 个 URL`);
+      setBatchUrls('');
+      await loadDocs();
+      result.documents.forEach(d => pollStatus(d.id));
+    } catch (e: any) {
+      message.error(e.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleCrawlImport = async () => {
+    if (!crawlUrl.trim()) return;
+    setImporting(true);
+    try {
+      const result = await importCrawlSite(crawlUrl.trim(), currentKbId, maxPages, maxDepth);
+      message.success(`爬取任务已提交: ${result.filename}`);
+      setCrawlUrl('');
+      await loadDocs();
+      pollStatus(result.id);
+    } catch (e: any) {
+      message.error(e.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const renderTagPopover = (doc: Document) => {
     const docTagIds = new Set(doc.tags?.map(t => t.id));
     return (
@@ -254,21 +309,93 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
         </div>
       </div>
 
-      {/* Upload Area */}
-      <Dragger
-        multiple
-        showUploadList={false}
-        accept=".pdf,.docx,.doc,.md,.txt,.xlsx,.pptx,.html,.htm,.csv"
-        beforeUpload={handleUpload}
-        disabled={loading}
-        style={{ marginBottom: 16, padding: '16px 0' }}
-      >
-        <p className="ant-upload-drag-icon">
-          <InboxOutlined />
-        </p>
-        <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
-        <p className="ant-upload-hint">支持 PDF、Word、Markdown、TXT、Excel、PPT、HTML、CSV 格式</p>
-      </Dragger>
+      {/* Upload & Import Area */}
+      <Tabs
+        size="small"
+        items={[
+          {
+            key: 'upload',
+            label: '文件上传',
+            children: (
+              <Dragger
+                multiple
+                showUploadList={false}
+                accept=".pdf,.docx,.doc,.md,.txt,.xlsx,.pptx,.html,.htm,.csv"
+                beforeUpload={handleUpload}
+                disabled={loading}
+                style={{ padding: '16px 0' }}
+              >
+                <p className="ant-upload-drag-icon">
+                  <InboxOutlined />
+                </p>
+                <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
+                <p className="ant-upload-hint">支持 PDF、Word、Markdown、TXT、Excel、PPT、HTML、CSV 格式</p>
+              </Dragger>
+            ),
+          },
+          {
+            key: 'single',
+            label: '网页导入',
+            children: (
+              <div style={{ padding: '12px 0' }}>
+                <Space.Compact style={{ width: '100%' }}>
+                  <Input
+                    prefix={<LinkOutlined />}
+                    placeholder="输入网页 URL，如 https://example.com/article"
+                    value={urlInput}
+                    onChange={e => setUrlInput(e.target.value)}
+                    onPressEnter={handleImportUrl}
+                  />
+                  <Button type="primary" loading={importing} onClick={handleImportUrl}>导入</Button>
+                </Space.Compact>
+              </div>
+            ),
+          },
+          {
+            key: 'batch',
+            label: '批量导入',
+            children: (
+              <div style={{ padding: '12px 0' }}>
+                <Input.TextArea
+                  placeholder="每行一个 URL，支持同时导入多个网页"
+                  value={batchUrls}
+                  onChange={e => setBatchUrls(e.target.value)}
+                  autoSize={{ minRows: 3, maxRows: 6 }}
+                  style={{ marginBottom: 8 }}
+                />
+                <Button type="primary" block loading={importing} onClick={handleBatchImport}>
+                  批量导入
+                </Button>
+              </div>
+            ),
+          },
+          {
+            key: 'crawl',
+            label: '整站爬取',
+            children: (
+              <div style={{ padding: '12px 0' }}>
+                <Input
+                  prefix={<GlobalOutlined />}
+                  placeholder="输入起始 URL，自动爬取同域名页面"
+                  value={crawlUrl}
+                  onChange={e => setCrawlUrl(e.target.value)}
+                  style={{ marginBottom: 8 }}
+                />
+                <Space style={{ marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: '#666' }}>最大页面:</span>
+                  <InputNumber size="small" value={maxPages} onChange={v => setMaxPages(v || 20)} min={1} max={50} />
+                  <span style={{ fontSize: 12, color: '#666' }}>深度:</span>
+                  <InputNumber size="small" value={maxDepth} onChange={v => setMaxDepth(v || 2)} min={1} max={3} />
+                </Space>
+                <Button type="primary" block loading={importing} onClick={handleCrawlImport}>
+                  开始爬取
+                </Button>
+              </div>
+            ),
+          },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
 
       {/* Document List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

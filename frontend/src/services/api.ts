@@ -57,6 +57,30 @@ export async function getDocumentContent(id: number): Promise<DocumentContent> {
   return request(`/documents/${id}/content`);
 }
 
+export async function importUrl(url: string, kbId: number = 1): Promise<{ id: number; filename: string; status: string }> {
+  return request('/documents/import-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, kb_id: kbId }),
+  });
+}
+
+export async function importBatchUrls(urls: string[], kbId: number = 1): Promise<{ imported: number; documents: { id: number; filename: string; status: string }[] }> {
+  return request('/documents/import-batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ urls, kb_id: kbId }),
+  });
+}
+
+export async function importCrawlSite(url: string, kbId: number = 1, maxPages: number = 20, maxDepth: number = 2): Promise<{ id: number; filename: string; status: string }> {
+  return request('/documents/import-crawl', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, kb_id: kbId, max_pages: maxPages, max_depth: maxDepth }),
+  });
+}
+
 // Chat
 export async function listConversations(): Promise<Conversation[]> {
   return request('/chat/history');
