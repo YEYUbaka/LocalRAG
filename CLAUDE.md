@@ -76,6 +76,8 @@ cd backend && conda run -n localrag python -m pytest tests/ -v
 | retrieval_top_k | 20 | 每路粗检索候选数量 |
 | rerank_top_k | 5 | 重排序后最终返回数量 |
 | rerank_threshold | 1.0 | 重排序分数阈值，低于此值的结果被过滤 |
+| query_rewrite_enabled | true | 是否启用 LLM 查询改写 |
+| web_search_enabled | false | 是否启用联网搜索（DuckDuckGo） |
 | temperature | 0.7 | LLM 生成温度 |
 | max_tokens | 2048 | 最大生成长度 |
 
@@ -85,15 +87,17 @@ cd backend && conda run -n localrag python -m pytest tests/ -v
 
 `POST /api/chat` 使用 SSE 流式响应，事件顺序：
 
-1. `event: token` → `{"content": "..."}` — 流式输出答案
-2. `event: sources` → `{"sources": [...]}` — 引用来源（最后发送）
-3. `event: done` → `{}` — 完成标记
+1. `event: thinking` → `{"status": "started|reasoning|completed", "message": "..."}` — 深度思考/图片分析进度（thinking_mode 或图片模式时发送）
+2. `event: token` → `{"content": "..."}` — 流式输出答案
+3. `event: sources` → `{"sources": [...]}` — 引用来源
+4. `event: done` → `{"conversation_id": ...}` — 完成标记
+5. `event: error` → `{"message": "..."}` — 错误信息
 
 ## Project Structure
 
 - `backend/app/api/` — FastAPI 路由（documents, chat, settings, knowledge_bases, auth, export）
 - `backend/app/auth.py` — JWT 认证模块
-- `backend/app/services/` — 业务逻辑（document_service, rag_service, llm_service, query_rewrite）
+- `backend/app/services/` — 业务逻辑（document_service, rag_service, llm_service, query_rewrite, web_search_service）
 - `backend/app/core/` — 基础设施（embedding, vectorstore, bm25_search, reranker, prompts）
 - `backend/app/models.py` — SQLAlchemy 数据模型（Document, Conversation, Message）
 - `frontend/src/components/` — React 组件（ChatPanel, DocumentList, DocumentPreviewPanel, SourcePanel, Sidebar, SettingsPanel）
@@ -130,9 +134,13 @@ cd backend && conda run -n localrag python -m pytest tests/ -v
 ## Design Docs
 
 - 总体设计: `docs/superpowers/specs/2026-06-11-localrag-design.md`
+- 质量加固设计: `docs/superpowers/specs/2026-06-13-quality-hardening-design.md`
+- 联网搜索与 Reranker 修复设计: `docs/superpowers/specs/2026-06-17-web-search-reranker-fix-design.md`
+- 稳定化设计: `docs/superpowers/specs/2026-06-19-stabilization-design.md`
 - 总体实施计划: `plans/localrag-implementation.md`
 - 文档预览设计: `plans/document-preview-design.md`
 - 文档预览实施: `plans/document-preview-implementation.md`
 - 下一步路线图: `plans/next-steps-roadmap.md`
 - RAG 相关性阈值修复: `plans/rag-relevance-threshold-fix.md`
 - 面试知识库计划: `plans/interview-knowledge-base-plan.md`
+- 稳定化实施计划: `plans/2026-06-19-stabilization-implementation.md`
