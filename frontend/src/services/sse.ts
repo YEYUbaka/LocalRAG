@@ -8,6 +8,48 @@ interface SSECallbacks {
   onThinking?: (status: string, message: string) => void;
 }
 
+async function _consumeSSEStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  callbacks: SSECallbacks,
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    let eventType = '';
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        eventType = line.slice(7).trim();
+      } else if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        try {
+          const parsed = JSON.parse(data);
+          if (eventType === 'token') {
+            callbacks.onToken?.(parsed.content);
+          } else if (eventType === 'sources') {
+            callbacks.onSources?.(parsed.sources);
+          } else if (eventType === 'done') {
+            callbacks.onDone?.(parsed);
+          } else if (eventType === 'error') {
+            callbacks.onError?.(parsed.message || '发生未知错误');
+          } else if (eventType === 'thinking') {
+            callbacks.onThinking?.(parsed.status, parsed.message);
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
+    }
+  }
+}
+
 export function streamChat(
   question: string,
   conversationId: number | null,
@@ -44,42 +86,7 @@ export function streamChat(
       const reader = res.body?.getReader();
       if (!reader) return;
 
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        let eventType = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            try {
-              const parsed = JSON.parse(data);
-              if (eventType === 'token') {
-                callbacks.onToken?.(parsed.content);
-              } else if (eventType === 'sources') {
-                callbacks.onSources?.(parsed.sources);
-              } else if (eventType === 'done') {
-                callbacks.onDone?.(parsed);
-              } else if (eventType === 'error') {
-                callbacks.onError?.(parsed.message || '发生未知错误');
-              } else if (eventType === 'thinking') {
-                callbacks.onThinking?.(parsed.status, parsed.message);
-              }
-            } catch {
-              // ignore parse errors
-            }
-          }
-        }
-      }
+      await _consumeSSEStream(reader, callbacks);
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
@@ -128,42 +135,7 @@ export function streamImageAnalysis(
       const reader = res.body?.getReader();
       if (!reader) return;
 
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        let eventType = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            try {
-              const parsed = JSON.parse(data);
-              if (eventType === 'token') {
-                callbacks.onToken?.(parsed.content);
-              } else if (eventType === 'sources') {
-                callbacks.onSources?.(parsed.sources);
-              } else if (eventType === 'done') {
-                callbacks.onDone?.(parsed);
-              } else if (eventType === 'error') {
-                callbacks.onError?.(parsed.message || '发生未知错误');
-              } else if (eventType === 'thinking') {
-                callbacks.onThinking?.(parsed.status, parsed.message);
-              }
-            } catch {
-              // ignore parse errors
-            }
-          }
-        }
-      }
+      await _consumeSSEStream(reader, callbacks);
     })
     .catch((err) => {
       if (err.name !== 'AbortError') {
