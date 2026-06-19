@@ -127,6 +127,120 @@ async def upload_document(
     return {"id": doc.id, "filename": doc.filename, "status": doc.status}
 
 
+class ImportUrlRequest(BaseModel):
+    url: str
+    kb_id: int = 1
+
+
+class ImportBatchUrlRequest(BaseModel):
+    urls: list[str]
+    kb_id: int = 1
+
+
+class ImportCrawlRequest(BaseModel):
+    url: str
+    kb_id: int = 1
+    max_pages: int = 20
+    max_depth: int = 2
+
+
+@router.post("/import-url")
+async def import_url(
+    req: ImportUrlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    # URL 去重检查
+    existing = db.query(Document).filter(Document.file_path == req.url, Document.user_id == user.id).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"URL 已导入: {existing.filename}")
+
+    doc = Document(
+        kb_id=req.kb_id,
+        user_id=user.id,
+        filename=req.url[:200],
+        file_path=req.url,
+        file_size=0,
+        md5_hash="",
+        status="pending",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    from app.services.document_service import process_url_import
+    background_tasks.add_task(process_url_import, doc.id, req.url)
+
+    return {"id": doc.id, "filename": doc.filename, "status": doc.status}
+
+
+@router.post("/import-batch")
+async def import_batch_urls(
+    req: ImportBatchUrlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    if len(req.urls) > 20:
+        raise HTTPException(status_code=400, detail="单次最多导入 20 个 URL")
+
+    results = []
+    for url in req.urls:
+        # 逐个去重
+        existing = db.query(Document).filter(Document.file_path == url, Document.user_id == user.id).first()
+        if existing:
+            results.append({"url": url, "status": "skipped", "detail": "已导入"})
+            continue
+
+        doc = Document(
+            kb_id=req.kb_id,
+            user_id=user.id,
+            filename=url[:200],
+            file_path=url,
+            file_size=0,
+            md5_hash="",
+            status="pending",
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+
+        from app.services.document_service import process_url_import
+        background_tasks.add_task(process_url_import, doc.id, url)
+        results.append({"url": url, "status": "pending", "id": doc.id})
+
+    return {"imported": len([r for r in results if r["status"] == "pending"]), "results": results}
+
+
+@router.post("/import-crawl")
+async def import_crawl(
+    req: ImportCrawlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    max_pages = min(req.max_pages, 50)
+
+    doc = Document(
+        kb_id=req.kb_id,
+        user_id=user.id,
+        filename=req.url[:200],
+        file_path=req.url,
+        file_size=0,
+        md5_hash="",
+        status="pending",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    from app.services.document_service import process_crawl_import
+    background_tasks.add_task(process_crawl_import, doc.id, req.url, max_pages, req.max_depth)
+
+    return {"id": doc.id, "filename": doc.filename, "status": doc.status}
+
+
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
     kb_id: int | None = Query(None),
