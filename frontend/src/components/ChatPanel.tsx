@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { Input, Button, message, Spin } from 'antd';
-import { SendOutlined, PlusOutlined } from '@ant-design/icons';
+import { Input, Button, message, Spin, Tooltip, Upload } from 'antd';
+import { SendOutlined, PlusOutlined, BulbOutlined, PictureOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message, Source, Conversation } from '../types';
 import { getConversation } from '../services/api';
-import { streamChat } from '../services/sse';
+import { streamChat, streamImageAnalysis } from '../services/sse';
 import SourcePanel from './SourcePanel';
 import DocumentPreviewPanel from './DocumentPreviewPanel';
 
@@ -26,7 +26,36 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
   const [streamingContent, setStreamingContent] = useState('');
   const [pendingSources, setPendingSources] = useState<Source[] | null>(null);
   const [highlightSnippet, setHighlightSnippet] = useState<string | undefined>();
+  const [thinkingMode, setThinkingMode] = useState(false);
+  const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
+  const [uploadedImage, setUploadedImage] = useState<{ base64: string; filename: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleImageUpload = (file: File) => {
+    // 检查文件类型
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      message.error('仅支持 JPEG、PNG、GIF、WebP 格式的图片');
+      return false;
+    }
+
+    // 检查文件大小（最大 10MB）
+    if (file.size > 10 * 1024 * 1024) {
+      message.error('图片大小不能超过 10MB');
+      return false;
+    }
+
+    // 转换为 Base64
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      setUploadedImage({ base64, filename: file.name });
+      message.success(`已上传图片: ${file.name}`);
+    };
+    reader.readAsDataURL(file);
+
+    return false; // 阻止自动上传
+  };
 
   const handleSourceClick = (docId: number, snippet: string) => {
     setHighlightSnippet(snippet);
@@ -75,11 +104,20 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
     setLoading(true);
     setStreamingContent('');
     setPendingSources(null);
+    setThinkingStatus(null);
+
+    // 判断是否有图片上传
+    const hasImage = uploadedImage !== null;
+    const displayContent = hasImage
+      ? `[图片分析] ${question}`
+      : thinkingMode
+      ? `[深度思考] ${question}`
+      : question;
 
     const userMsg: Message = {
       id: Date.now(),
       role: 'user',
-      content: question,
+      content: displayContent,
       sources: null,
       created_at: new Date().toISOString(),
     };
@@ -88,15 +126,15 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
     let fullContent = '';
     let convId = conversationId;
 
-    streamChat(question, conversationId, {
-      onToken: (content) => {
+    const callbacks = {
+      onToken: (content: string) => {
         fullContent += content;
         setStreamingContent(fullContent);
       },
-      onSources: (sources) => {
+      onSources: (sources: Source[]) => {
         setPendingSources(sources);
       },
-      onDone: (data) => {
+      onDone: (data: { conversation_id: number }) => {
         const assistantMsg: Message = {
           id: Date.now() + 1,
           role: 'assistant',
@@ -108,17 +146,31 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
         setStreamingContent('');
         setPendingSources(null);
         setLoading(false);
+        setThinkingStatus(null);
+        setUploadedImage(null); // 清除已上传的图片
 
         if (!conversationId && data.conversation_id) {
           onNewConversation(data.conversation_id);
         }
       },
-      onError: (error) => {
+      onError: (error: string) => {
         message.error(error);
         setLoading(false);
         setStreamingContent('');
+        setThinkingStatus(null);
       },
-    }, currentKbId);
+      onThinking: (status: string, msg: string) => {
+        setThinkingStatus(msg);
+      },
+    };
+
+    if (hasImage) {
+      // 图片分析模式
+      streamImageAnalysis(question, uploadedImage!.base64, conversationId, callbacks, currentKbId);
+    } else {
+      // 普通或深度思考模式
+      streamChat(question, conversationId, callbacks, currentKbId, thinkingMode);
+    }
   };
 
   return (
@@ -184,33 +236,75 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
           )}
           {loading && !streamingContent && (
             <div style={{ textAlign: 'center', padding: 20 }}>
-              <Spin tip="思考中..." />
+              <Spin description="思考中..." />
             </div>
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        <div style={{ padding: 16, borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8 }}>
-          <Input.TextArea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onPressEnter={(e) => {
-              if (!e.shiftKey) {
-                e.preventDefault();
-                handleSend();
+        <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
+          {thinkingStatus && (
+            <div style={{ marginBottom: 8, color: '#1677ff', fontSize: 13 }}>
+              <Spin size="small" /> {thinkingStatus}
+            </div>
+          )}
+          {uploadedImage && (
+            <div style={{ marginBottom: 8, padding: '8px 12px', background: '#f0f7ff', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ color: '#1677ff' }}>
+                <PictureOutlined /> 已上传图片: {uploadedImage.filename}
+              </span>
+              <Button type="link" size="small" onClick={() => setUploadedImage(null)}>
+                移除
+              </Button>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Upload
+              showUploadList={false}
+              beforeUpload={handleImageUpload}
+              accept="image/jpeg,image/png,image/gif,image/webp"
+            >
+              <Tooltip title="上传图片进行分析（支持视觉模型）">
+                <Button icon={<PictureOutlined />} />
+              </Tooltip>
+            </Upload>
+            <Tooltip title={thinkingMode ? '深度思考模式已开启（使用更强模型，响应更慢）' : '开启深度思考模式'}>
+              <Button
+                icon={<BulbOutlined />}
+                onClick={() => setThinkingMode(!thinkingMode)}
+                style={{
+                  color: thinkingMode ? '#1677ff' : undefined,
+                  borderColor: thinkingMode ? '#1677ff' : undefined,
+                }}
+              />
+            </Tooltip>
+            <Input.TextArea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onPressEnter={(e) => {
+                if (!e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder={
+                uploadedImage
+                  ? '输入关于图片的问题...'
+                  : thinkingMode
+                  ? '输入问题（深度思考模式）...'
+                  : '输入问题... (Shift+Enter 换行)'
               }
-            }}
-            placeholder="输入问题... (Shift+Enter 换行)"
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            disabled={loading}
-          />
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={handleSend}
-            loading={loading}
-            style={{ height: 'auto' }}
-          />
+              autoSize={{ minRows: 1, maxRows: 4 }}
+              disabled={loading}
+            />
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              onClick={handleSend}
+              loading={loading}
+              style={{ height: 'auto' }}
+            />
+          </div>
         </div>
       </div>
 

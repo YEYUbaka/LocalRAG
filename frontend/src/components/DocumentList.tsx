@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { List, Button, Upload, message, Tag, Popconfirm, Typography } from 'antd';
+import { Button, Upload, message, Tag, Popconfirm, Typography, Space } from 'antd';
 import { UploadOutlined, DeleteOutlined, FilePdfOutlined, FileTextOutlined, FileWordOutlined, InboxOutlined, ReloadOutlined } from '@ant-design/icons';
-import type { UploadFile } from 'antd/es/upload/interface';
 import type { Document } from '../types';
 import { listDocuments, uploadDocument, deleteDocument, getDocumentStatus, reprocessDocument } from '../services/api';
 
@@ -113,42 +112,84 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
         <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
         <p className="ant-upload-hint">支持 PDF、Word、Markdown、TXT、Excel、PPT、HTML、CSV 格式</p>
       </Dragger>
-      <List
-        size="small"
-        dataSource={docs}
-        locale={{ emptyText: '暂无文档' }}
-        renderItem={(doc) => (
-          <List.Item
-            onClick={() => doc.status === 'completed' && onDocumentClick?.(doc.id)}
-            style={{ cursor: doc.status === 'completed' ? 'pointer' : 'default' }}
-            actions={[
-              ...(doc.status === 'completed' || doc.status === 'failed' ? [
-                <Button type="text" icon={<ReloadOutlined />} size="small" onClick={() => handleReprocess(doc.id)} />
-              ] : []),
-              <Popconfirm title="确认删除？" onConfirm={() => handleDelete(doc.id)}>
-                <Button type="text" danger icon={<DeleteOutlined />} size="small" />
-              </Popconfirm>,
-            ]}
-          >
-            <List.Item.Meta
-              avatar={getIcon(doc.filename)}
-              title={<span style={{ fontSize: 13 }}>{doc.filename}</span>}
-              description={
-                <div>
-                  <Tag color={STATUS_MAP[doc.status]?.color}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {docs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>暂无文档</div>
+        ) : (
+          docs.map((doc) => (
+            <div
+              key={doc.id}
+              onClick={() => doc.status === 'completed' && onDocumentClick?.(doc.id)}
+              style={{
+                cursor: doc.status === 'completed' ? 'pointer' : 'default',
+                padding: '12px 16px',
+                border: '1px solid #f0f0f0',
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                transition: 'all 0.2s',
+                backgroundColor: doc.status === 'completed' ? '#fafafa' : '#fff',
+              }}
+              onMouseEnter={(e) => {
+                if (doc.status === 'completed') {
+                  e.currentTarget.style.borderColor = '#d9d9d9';
+                  e.currentTarget.style.backgroundColor = '#f5f5f5';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#f0f0f0';
+                e.currentTarget.style.backgroundColor = doc.status === 'completed' ? '#fafafa' : '#fff';
+              }}
+            >
+              <div style={{ fontSize: 20, color: '#1890ff' }}>
+                {getIcon(doc.filename)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {doc.filename}
+                </div>
+                <Space size={4}>
+                  <Tag color={STATUS_MAP[doc.status]?.color} style={{ margin: 0 }}>
                     {STATUS_MAP[doc.status]?.text}
                   </Tag>
                   {doc.chunk_count > 0 && (
-                    <Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
                       {doc.chunk_count} chunks
                     </Text>
                   )}
-                </div>
-              }
-            />
-          </List.Item>
+                </Space>
+              </div>
+              <Space size={4}>
+                {(doc.status === 'completed' || doc.status === 'failed') && (
+                  <Button
+                    type="text"
+                    icon={<ReloadOutlined />}
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReprocess(doc.id);
+                    }}
+                  />
+                )}
+                <Popconfirm
+                  title="确认删除？"
+                  onConfirm={() => handleDelete(doc.id)}
+                  onCancel={(e) => e?.stopPropagation()}
+                >
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    size="small"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </Popconfirm>
+              </Space>
+            </div>
+          ))
         )}
-      />
+      </div>
     </div>
   );
 }

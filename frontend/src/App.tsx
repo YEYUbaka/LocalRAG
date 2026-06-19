@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ConfigProvider, theme, Button, Drawer } from 'antd';
+import { ConfigProvider, theme, Button, Drawer, App as AntApp } from 'antd';
 import { MenuOutlined } from '@ant-design/icons';
 import zhCN from 'antd/locale/zh_CN';
 import Sidebar from './components/Sidebar';
@@ -50,7 +50,9 @@ export default function App() {
   if (!authenticated) {
     return (
       <ConfigProvider locale={zhCN} theme={{ algorithm: theme.defaultAlgorithm }}>
-        <LoginPage onLogin={handleLogin} />
+        <AntApp>
+          <LoginPage onLogin={handleLogin} />
+        </AntApp>
       </ConfigProvider>
     );
   }
@@ -89,49 +91,51 @@ export default function App() {
 
   return (
     <ConfigProvider locale={zhCN} theme={{ algorithm: theme.defaultAlgorithm }}>
-      <div style={{ display: 'flex', height: '100vh', background: '#fff' }}>
-        {!isMobile && (
-          <div
-            style={{
-              width: 280,
-              borderRight: '1px solid #f0f0f0',
-              display: 'flex',
-              flexDirection: 'column',
-              flexShrink: 0,
-            }}
-          >
-            {sidebarContent}
-          </div>
-        )}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {isMobile && (
-            <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Button
-                type="text"
-                icon={<MenuOutlined />}
-                onClick={() => setDrawerOpen(true)}
-              />
-              <span style={{ fontWeight: 600 }}>LocalRAG</span>
+      <AntApp>
+        <div style={{ display: 'flex', height: '100vh', background: '#fff' }}>
+          {!isMobile && (
+            <div
+              style={{
+                width: 280,
+                borderRight: '1px solid #f0f0f0',
+                display: 'flex',
+                flexDirection: 'column',
+                flexShrink: 0,
+              }}
+            >
+              {sidebarContent}
             </div>
           )}
-          <ChatPanel
-            conversationId={conversationId}
-            onNewConversation={handleNewConversation}
-            previewDocId={previewDocId}
-            onPreviewDocChange={handlePreviewChange}
-            currentKbId={currentKbId}
-          />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            {isMobile && (
+              <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Button
+                  type="text"
+                  icon={<MenuOutlined />}
+                  onClick={() => setDrawerOpen(true)}
+                />
+                <span style={{ fontWeight: 600 }}>LocalRAG</span>
+              </div>
+            )}
+            <ChatPanel
+              conversationId={conversationId}
+              onNewConversation={handleNewConversation}
+              previewDocId={previewDocId}
+              onPreviewDocChange={handlePreviewChange}
+              currentKbId={currentKbId}
+            />
+          </div>
         </div>
-      </div>
-      <Drawer
-        placement="left"
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        width={280}
-        styles={{ body: { padding: 0 } }}
-      >
-        {sidebarContent}
-      </Drawer>
+        <Drawer
+          placement="left"
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          width={280}
+          styles={{ body: { padding: 0 } }}
+        >
+          {sidebarContent}
+        </Drawer>
+      </AntApp>
     </ConfigProvider>
   );
 }

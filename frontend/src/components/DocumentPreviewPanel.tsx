@@ -99,7 +99,7 @@ export default function DocumentPreviewPanel({ docId, highlightSnippet, onClose 
   if (loading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-        <Spin tip="加载文档内容..." />
+        <Spin description="加载文档内容..." />
       </div>
     );
   }

@@ -49,7 +49,7 @@ export default function LoginPage({ onLogin }: Props) {
           </Form.Item>
 
           <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
+            <Input.Password prefix={<LockOutlined />} placeholder="密码" autoComplete="current-password" />
           </Form.Item>
 
           {isRegister && (
