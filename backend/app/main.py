@@ -24,6 +24,7 @@ from app.api.settings import router as settings_router
 from app.api.knowledge_bases import router as kb_router
 from app.api.export import router as export_router
 from app.api.auth import router as auth_router
+from app.api.tags import router as tags_router
 
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -102,6 +103,7 @@ app.include_router(chat_router)
 app.include_router(settings_router)
 app.include_router(kb_router)
 app.include_router(export_router)
+app.include_router(tags_router)
 
 
 @app.on_event("startup")
