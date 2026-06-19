@@ -293,7 +293,8 @@ async def rag_query_with_image(
         for msg in history:
             if msg.role == "user":
                 messages.append(HumanMessage(content=msg.content))
-            # 助手消息暂时跳过，因为图片消息格式特殊
+            elif msg.role == "assistant":
+                messages.append(AIMessage(content=msg.content))
 
         messages.append(HumanMessage(content=content))
 
