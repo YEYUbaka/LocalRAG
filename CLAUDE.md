@@ -36,10 +36,11 @@ Frontend (React+TS) --REST+SSE--> Backend (FastAPI) --> ChromaDB (向量)
          → 每个变体: vector(top 20) + BM25(top 20) → RRF fusion
          → 合并去重
          → bge-reranker 精排序
+         → 阈值过滤（rerank_score < threshold 的结果丢弃）
          → top 5
 ```
 
-可通过设置面板开关各阶段：query_rewrite_enabled、hybrid_search、rerank_enabled。
+可通过设置面板开关各阶段：query_rewrite_enabled、hybrid_search、rerank_enabled、rerank_threshold。
 
 ## Common Commands
 
@@ -72,6 +73,9 @@ cd backend && conda run -n localrag python -m pytest tests/ -v
 | chunk_size | 500 | 文本块大小（字符数） |
 | chunk_overlap | 50 | 块间重叠长度 |
 | top_k | 5 | 检索返回的片段数量 |
+| retrieval_top_k | 20 | 每路粗检索候选数量 |
+| rerank_top_k | 5 | 重排序后最终返回数量 |
+| rerank_threshold | 1.0 | 重排序分数阈值，低于此值的结果被过滤 |
 | temperature | 0.7 | LLM 生成温度 |
 | max_tokens | 2048 | 最大生成长度 |
 
@@ -97,6 +101,32 @@ cd backend && conda run -n localrag python -m pytest tests/ -v
 - `data/` — 本地数据（chromadb/, uploads/, models/）
 - `plans/` — 设计文档和实施计划
 
+## Knowledge Base Documents (面试求职方向)
+
+`test_docs/` 目录下包含 17 个面试求职知识库文档（2026-06-17 创建）：
+
+| 文件 | 内容 | 字数 |
+|------|------|------|
+| interview-test-dev.md | 测试开发面试题 | ~12,000 |
+| interview-network-basics.md | 计算机网络面试题 | ~8,000 |
+| interview-db-basics.md | 数据库面试题 | ~7,000 |
+| interview-python-core.md | Python核心面试题 | ~7,000 |
+| interview-ai-engineer.md | AI应用开发面试题 | ~6,000 |
+| interview-behavioral.md | 行为面试题 | ~5,000 |
+| interview-project-star.md | 项目经验包装指南 | ~5,000 |
+| interview-project-qa.md | 项目深挖追问 | ~4,000 |
+| interview-resume-tips.md | 简历优化指南 | ~3,000 |
+| interview-salary-negotiation.md | 谈薪技巧 | ~3,000 |
+| interview-job-hunting-strategy.md | 求职策略 | ~3,000 |
+| interview-linux-basics.md | Linux面试题 | ~4,000 |
+| interview-os-basics.md | 操作系统面试题 | ~4,000 |
+| interview-ds-algo.md | 数据结构与算法 | ~4,000 |
+| interview-backend-dev.md | 后端开发面试题 | ~4,000 |
+| interview-real-cases.md | 真实面试复盘 | ~3,000 |
+| interview-mock-qa.md | 模拟面试Q&A | ~3,000 |
+
+总计约 132KB，覆盖 200+ 个面试问题。
+
 ## Design Docs
 
 - 总体设计: `docs/superpowers/specs/2026-06-11-localrag-design.md`
@@ -104,3 +134,5 @@ cd backend && conda run -n localrag python -m pytest tests/ -v
 - 文档预览设计: `plans/document-preview-design.md`
 - 文档预览实施: `plans/document-preview-implementation.md`
 - 下一步路线图: `plans/next-steps-roadmap.md`
+- RAG 相关性阈值修复: `plans/rag-relevance-threshold-fix.md`
+- 面试知识库计划: `plans/interview-knowledge-base-plan.md`
