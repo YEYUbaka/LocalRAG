@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Enum as SAEnum
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -26,6 +26,29 @@ class KnowledgeBase(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Tag(Base):
+    __tablename__ = "tags"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    name       = Column(String(50), nullable=False, unique=True)
+    color      = Column(String(20), default="default")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    documents = relationship("DocumentTag", back_populates="tag", cascade="all, delete-orphan")
+
+
+class DocumentTag(Base):
+    __tablename__ = "document_tags"
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    tag_id      = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+    document = relationship("Document", back_populates="tags")
+    tag = relationship("Tag", back_populates="documents")
+
+    __table_args__ = (UniqueConstraint("document_id", "tag_id", name="uq_doc_tag"),)
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -47,6 +70,8 @@ class Document(Base):
     chunk_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tags = relationship("DocumentTag", back_populates="document", cascade="all, delete-orphan")
 
 
 class Conversation(Base):
