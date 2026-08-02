@@ -1,6 +1,7 @@
 import chromadb
 from app.config import settings
 from app.core.embedding import embed_texts
+from app.domain.tenant import TenantScope
 
 _client: chromadb.ClientAPI | None = None
 _collection: chromadb.Collection | None = None
@@ -27,11 +28,18 @@ def get_collection() -> chromadb.Collection:
     return _collection
 
 
-def add_documents(doc_id: int, texts: list[str], metadatas: list[dict], kb_id: int = 1) -> None:
+def _scope_filter(scope: TenantScope) -> dict:
+    return {"$and": [{"owner_id": scope.user_id}, {"kb_id": scope.kb_id}]}
+
+
+def add_documents(scope: TenantScope, document_id: int, texts: list[str], metadatas: list[dict]) -> None:
     collection = get_collection()
     embeddings = embed_texts(texts)
-    ids = [f"doc_{doc_id}_chunk_{i}" for i in range(len(texts))]
-    metadata_with_doc = [{**m, "doc_id": doc_id, "kb_id": kb_id} for m in metadatas]
+    ids = [f"doc_{document_id}_chunk_{i}" for i in range(len(texts))]
+    metadata_with_doc = [
+        {**m, "owner_id": scope.user_id, "kb_id": scope.kb_id, "doc_id": document_id}
+        for m in metadatas
+    ]
     collection.add(
         ids=ids,
         embeddings=embeddings,
@@ -40,8 +48,8 @@ def add_documents(doc_id: int, texts: list[str], metadatas: list[dict], kb_id: i
     )
 
 
-def vector_search(query: str, top_k: int | None = None, kb_id: int | None = None) -> list[dict]:
-    """Pure vector search using ChromaDB."""
+def vector_search(scope: TenantScope, query: str, top_k: int | None = None) -> list[dict]:
+    """Pure vector search using ChromaDB, scoped to owner + knowledge base."""
     collection = get_collection()
     if collection.count() == 0:
         return []
@@ -49,14 +57,12 @@ def vector_search(query: str, top_k: int | None = None, kb_id: int | None = None
     k = top_k or settings.retrieval_top_k
     query_embedding = embed_texts([query])
 
-    where_filter = {"kb_id": kb_id} if kb_id is not None else None
     query_kwargs = dict(
         query_embeddings=query_embedding,
         n_results=k,
+        where=_scope_filter(scope),
         include=["documents", "metadatas", "distances"],
     )
-    if where_filter:
-        query_kwargs["where"] = where_filter
 
     results = collection.query(**query_kwargs)
 
@@ -109,16 +115,16 @@ def rrf_fusion(
     return [doc_lookup[doc_id] for doc_id, _ in ranked if doc_id in doc_lookup]
 
 
-def hybrid_search(query: str, kb_id: int | None = None) -> list[dict]:
+def hybrid_search(scope: TenantScope, query: str) -> list[dict]:
     """Hybrid search: vector + BM25 with RRF fusion, or pure vector if hybrid is disabled."""
     if not settings.hybrid_search:
-        return vector_search(query, top_k=settings.rerank_top_k, kb_id=kb_id)
+        return vector_search(scope, query, top_k=settings.rerank_top_k)
 
     from app.core.bm25_search import bm25_search
 
     retrieval_k = settings.retrieval_top_k
-    vector_results = vector_search(query, top_k=retrieval_k, kb_id=kb_id)
-    bm25_results = bm25_search(query, top_k=retrieval_k, kb_id=kb_id)
+    vector_results = vector_search(scope, query, top_k=retrieval_k)
+    bm25_results = bm25_search(scope, query, top_k=retrieval_k)
 
     if not bm25_results:
         return vector_results[:settings.rerank_top_k]
@@ -154,13 +160,21 @@ def hybrid_search(query: str, kb_id: int | None = None) -> list[dict]:
     return fused[:settings.rerank_top_k]
 
 
-def search(query: str, top_k: int | None = None, kb_id: int | None = None) -> list[dict]:
+def search(scope: TenantScope, query: str, top_k: int | None = None) -> list[dict]:
     """Main search entry point. Uses hybrid_search when enabled."""
     if top_k is not None:
-        return vector_search(query, top_k=top_k, kb_id=kb_id)
-    return hybrid_search(query, kb_id=kb_id)
+        return vector_search(scope, query, top_k=top_k)
+    return hybrid_search(scope, query)
 
 
-def delete_by_doc_id(doc_id: int) -> None:
+def delete_by_document_id(scope: TenantScope, document_id: int) -> None:
     collection = get_collection()
-    collection.delete(where={"doc_id": doc_id})
+    collection.delete(
+        where={
+            "$and": [
+                {"owner_id": scope.user_id},
+                {"kb_id": scope.kb_id},
+                {"doc_id": document_id},
+            ]
+        }
+    )

@@ -251,8 +251,7 @@ def list_documents(
     user=Depends(get_current_user),
 ):
     from sqlalchemy import or_
-    # Show user's own docs + orphaned docs (user_id IS NULL)
-    query = db.query(Document).filter(or_(Document.user_id == user.id, Document.user_id.is_(None)))
+    query = db.query(Document).filter(Document.user_id == user.id)
     if kb_id is not None:
         query = query.filter(Document.kb_id == kb_id)
 
@@ -270,14 +269,6 @@ def list_documents(
         )
 
     docs = query.order_by(Document.created_at.desc()).all()
-    # Auto-claim orphaned documents
-    claimed = False
-    for d in docs:
-        if d.user_id is None:
-            d.user_id = user.id
-            claimed = True
-    if claimed:
-        db.commit()
     return [_doc_to_response(d) for d in docs]
 
 
@@ -328,9 +319,11 @@ async def reprocess_document(
     db.commit()
 
     # Delete old vectors and BM25 chunks
-    from app.core.vectorstore import delete_by_doc_id
+    from app.core.vectorstore import delete_by_document_id
     from app.core.bm25_search import remove_document
-    delete_by_doc_id(doc_id)
+    from app.domain.tenant import TenantScope
+    scope = TenantScope(user_id=user.id, kb_id=doc.kb_id)
+    delete_by_document_id(scope, doc_id)
     remove_document(doc_id)
 
     # Start background processing

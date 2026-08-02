@@ -5,6 +5,11 @@ import pytest
 from app.core.vectorstore import rrf_fusion
 from app.core import bm25_search as bm25_module
 from app.core.bm25_search import add_document_chunks, remove_document, bm25_search
+from app.domain.tenant import TenantScope
+
+SCOPE1 = TenantScope(user_id=1, kb_id=1)
+SCOPE2 = TenantScope(user_id=1, kb_id=2)
+SCOPE3 = TenantScope(user_id=1, kb_id=3)
 
 
 # ---------------------------------------------------------------------------
@@ -16,14 +21,14 @@ def _clean_bm25_state():
     """Clear global BM25 state before and after each test."""
     bm25_module._chunk_store.clear()
     bm25_module._metadata_store.clear()
-    bm25_module._kb_map.clear()
+    bm25_module._owner_map.clear()
     bm25_module._bm25_index = None
     bm25_module._corpus = []
     bm25_module._dirty = True
     yield
     bm25_module._chunk_store.clear()
     bm25_module._metadata_store.clear()
-    bm25_module._kb_map.clear()
+    bm25_module._owner_map.clear()
     bm25_module._bm25_index = None
     bm25_module._corpus = []
     bm25_module._dirty = True
@@ -114,25 +119,25 @@ class TestBm25Search:
         """Adding documents then searching returns matching results with correct metadata."""
         # Need >= 3 docs so BM25 IDF is non-zero for terms appearing in 1 doc
         add_document_chunks(
-            doc_id=1,
+            SCOPE1,
+            document_id=1,
             chunks=["Python 是一种广泛使用的编程语言", "Java 也是一种流行的编程语言"],
-            kb_id=1,
             metadatas=[{"source": "python.md"}, {"source": "java.md"}],
         )
         add_document_chunks(
-            doc_id=2,
+            SCOPE1,
+            document_id=2,
             chunks=["机器学习是人工智能的一个子领域"],
-            kb_id=1,
             metadatas=[{"source": "ml.md"}],
         )
         add_document_chunks(
-            doc_id=3,
+            SCOPE1,
+            document_id=3,
             chunks=["操作系统负责管理计算机的硬件资源"],
-            kb_id=1,
             metadatas=[{"source": "os.md"}],
         )
 
-        results = bm25_search("Python 编程", top_k=5)
+        results = bm25_search(SCOPE1, "Python 编程", top_k=5)
 
         assert len(results) > 0
         # The first result should be about Python
@@ -147,30 +152,30 @@ class TestBm25Search:
         """After removing a document, its chunks no longer appear in search results."""
         # Need >= 3 docs so BM25 IDF is non-zero
         add_document_chunks(
-            doc_id=1,
+            SCOPE1,
+            document_id=1,
             chunks=["深度学习使用神经网络进行特征提取"],
-            kb_id=1,
         )
         add_document_chunks(
-            doc_id=2,
+            SCOPE1,
+            document_id=2,
             chunks=["自然语言处理是人工智能的重要分支"],
-            kb_id=1,
         )
         add_document_chunks(
-            doc_id=3,
+            SCOPE1,
+            document_id=3,
             chunks=["数据库索引可以提高查询性能"],
-            kb_id=1,
         )
 
         # Verify doc 1 is searchable
-        results_before = bm25_search("深度学习", top_k=10)
+        results_before = bm25_search(SCOPE1, "深度学习", top_k=10)
         doc_ids_before = {r["doc_id"] for r in results_before}
         assert 1 in doc_ids_before
 
         # Remove doc 1
         remove_document(1)
 
-        results_after = bm25_search("深度学习 神经网络", top_k=10)
+        results_after = bm25_search(SCOPE1, "深度学习 神经网络", top_k=10)
         doc_ids_after = {r["doc_id"] for r in results_after}
         assert 1 not in doc_ids_after
 
@@ -178,23 +183,23 @@ class TestBm25Search:
         """kb_id filter returns only results from the specified knowledge base."""
         # Use distinct content per kb so BM25 IDF is non-zero
         add_document_chunks(
-            doc_id=1,
+            SCOPE1,
+            document_id=1,
             chunks=["Python 编程语言的列表推导式非常简洁"],
-            kb_id=1,
         )
         add_document_chunks(
-            doc_id=2,
+            SCOPE2,
+            document_id=2,
             chunks=["Java 的泛型机制提供了类型安全"],
-            kb_id=2,
         )
         add_document_chunks(
-            doc_id=3,
+            SCOPE3,
+            document_id=3,
             chunks=["Go 语言的协程模型适合高并发"],
-            kb_id=3,
         )
 
-        results_kb1 = bm25_search("Python 编程", top_k=10, kb_id=1)
-        results_kb2 = bm25_search("Java 泛型", top_k=10, kb_id=2)
+        results_kb1 = bm25_search(SCOPE1, "Python 编程", top_k=10)
+        results_kb2 = bm25_search(SCOPE2, "Java 泛型", top_k=10)
 
         assert len(results_kb1) > 0
         assert len(results_kb2) > 0
@@ -203,5 +208,5 @@ class TestBm25Search:
 
     def test_bm25_search_empty_index(self):
         """Searching an empty index returns an empty list."""
-        results = bm25_search("任何查询", top_k=5)
+        results = bm25_search(SCOPE1, "任何查询", top_k=5)
         assert results == []

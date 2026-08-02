@@ -4,6 +4,8 @@ import logging
 import os
 from rank_bm25 import BM25Okapi
 
+from app.domain.tenant import TenantScope
+
 # 静默 jieba 的字典加载输出
 with open(os.devnull, "w") as _devnull:
     import sys
@@ -18,8 +20,8 @@ logger = logging.getLogger(__name__)
 _chunk_store: dict[int, list[str]] = {}
 # doc_id -> list of chunk metadata
 _metadata_store: dict[int, list[dict]] = {}
-# doc_id -> kb_id mapping
-_kb_map: dict[int, int] = {}
+# doc_id -> (owner_id, kb_id)
+_owner_map: dict[int, tuple[int, int]] = {}
 _bm25_index: BM25Okapi | None = None
 _corpus: list[tuple[int, str, dict]] = []  # [(doc_id, chunk_text, metadata), ...]
 _dirty = True
@@ -51,33 +53,41 @@ def _rebuild_index() -> None:
     logger.info(f"BM25 index rebuilt: {len(_corpus)} chunks from {len(_chunk_store)} documents")
 
 
-def add_document_chunks(doc_id: int, chunks: list[str], kb_id: int = 1, metadatas: list[dict] | None = None) -> None:
+def add_document_chunks(scope: TenantScope, document_id: int, chunks: list[str], metadatas: list[dict] | None = None) -> None:
     """Add chunks for a document to the BM25 index."""
     global _dirty
     try:
-        _chunk_store[doc_id] = chunks
-        _metadata_store[doc_id] = metadatas or [{}] * len(chunks)
-        _kb_map[doc_id] = kb_id
+        enriched = []
+        for i, meta in enumerate(metadatas or [{}] * len(chunks)):
+            enriched.append({
+                **meta,
+                "owner_id": scope.user_id,
+                "kb_id": scope.kb_id,
+                "doc_id": document_id,
+            })
+        _chunk_store[document_id] = chunks
+        _metadata_store[document_id] = enriched
+        _owner_map[document_id] = (scope.user_id, scope.kb_id)
         _dirty = True
     except Exception as e:
-        logger.warning(f"BM25: failed to add chunks for doc {doc_id}: {e}")
+        logger.warning(f"BM25: failed to add chunks for doc {document_id}: {e}")
 
 
-def remove_document(doc_id: int) -> None:
+def remove_document(document_id: int) -> None:
     """Remove a document's chunks from the BM25 index."""
     global _dirty
     try:
-        if doc_id in _chunk_store:
-            del _chunk_store[doc_id]
+        if document_id in _chunk_store:
+            del _chunk_store[document_id]
             _dirty = True
-        _metadata_store.pop(doc_id, None)
-        _kb_map.pop(doc_id, None)
+        _metadata_store.pop(document_id, None)
+        _owner_map.pop(document_id, None)
     except Exception as e:
-        logger.warning(f"BM25: failed to remove doc {doc_id}: {e}")
+        logger.warning(f"BM25: failed to remove doc {document_id}: {e}")
 
 
-def bm25_search(query: str, top_k: int = 20, kb_id: int | None = None) -> list[dict]:
-    """Search using BM25 keyword matching. Returns list of {id, document, metadata}."""
+def bm25_search(scope: TenantScope, query: str, top_k: int = 20) -> list[dict]:
+    """Search using BM25 keyword matching, scoped to owner + knowledge base."""
     global _dirty
     if _dirty:
         _rebuild_index()
@@ -88,7 +98,7 @@ def bm25_search(query: str, top_k: int = 20, kb_id: int | None = None) -> list[d
     tokenized_query = _tokenize(query)
     scores = _bm25_index.get_scores(tokenized_query)
 
-    # Get top-k indices by score, filtered by kb_id if specified
+    # Get top-k indices by score, filtered by tenant scope
     ranked_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
 
     results = []
@@ -96,7 +106,8 @@ def bm25_search(query: str, top_k: int = 20, kb_id: int | None = None) -> list[d
         if scores[idx] <= 0:
             continue
         doc_id, text, meta = _corpus[idx]
-        if kb_id is not None and _kb_map.get(doc_id) != kb_id:
+        owner, kb_id = _owner_map.get(doc_id, (None, None))
+        if owner != scope.user_id or kb_id != scope.kb_id:
             continue
         results.append({
             "id": f"doc_{doc_id}_chunk_{idx}",
@@ -126,7 +137,8 @@ def rebuild_from_db(db_session_factory) -> None:
                     if file_path.exists():
                         raw_docs = parse_document(file_path)
                         texts, metadatas = split_documents(raw_docs, doc.filename)
-                        add_document_chunks(doc.id, texts, kb_id=doc.kb_id, metadatas=metadatas)
+                        scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
+                        add_document_chunks(scope, doc.id, texts, metadatas=metadatas)
                 except Exception as e:
                     logger.warning(f"BM25: failed to rebuild for doc {doc.id}: {e}")
         _rebuild_index()

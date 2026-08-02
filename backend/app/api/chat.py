@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Conversation, Message
 from app.auth import get_current_user
+from app.application.access_policy import AccessPolicy
 from app.services.rag_service import rag_query, rag_query_with_thinking, rag_query_with_image
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -30,6 +31,11 @@ class ChatRequest(BaseModel):
 
 @router.post("")
 async def chat(request: ChatRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    scope = AccessPolicy.require_kb(db, user.id, request.kb_id or 1)
+
+    if request.conversation_id:
+        AccessPolicy.require_conversation(db, user.id, request.conversation_id)
+
     # 根据是否启用深度思考选择不同的查询函数
     if request.thinking_mode:
         query_fn = rag_query_with_thinking
@@ -37,7 +43,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db), user=Depends
         query_fn = rag_query
 
     return StreamingResponse(
-        query_fn(request.question, request.conversation_id, db, kb_id=request.kb_id, user_id=user.id),
+        query_fn(request.question, request.conversation_id, db, scope=scope, user_id=user.id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -114,6 +120,11 @@ async def chat_with_image(
     user=Depends(get_current_user),
 ):
     """图片理解 - 使用视觉模型分析图片"""
+    scope = AccessPolicy.require_kb(db, user.id, request.kb_id or 1)
+
+    if request.conversation_id:
+        AccessPolicy.require_conversation(db, user.id, request.conversation_id)
+
     # 检查 base64 图片大小（解码后最大 10MB）
     try:
         base64_data = request.image_base64
@@ -133,7 +144,7 @@ async def chat_with_image(
             request.image_base64,
             request.conversation_id,
             db,
-            kb_id=request.kb_id,
+            scope=scope,
             user_id=user.id,
         ),
         media_type="text/event-stream",

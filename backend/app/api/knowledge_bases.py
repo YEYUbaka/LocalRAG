@@ -29,7 +29,7 @@ class KBUpdate(BaseModel):
 @router.get("")
 def list_kbs(db: Session = Depends(get_db), user=Depends(get_current_user)):
     kbs = db.query(KnowledgeBase).filter(
-        (KnowledgeBase.user_id == user.id) | (KnowledgeBase.user_id.is_(None))
+        KnowledgeBase.user_id == user.id
     ).order_by(KnowledgeBase.id).all()
     result = []
     for kb in kbs:
@@ -57,7 +57,7 @@ def create_kb(data: KBCreate, db: Session = Depends(get_db), user=Depends(get_cu
 def update_kb(kb_id: int, data: KBUpdate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     kb = db.query(KnowledgeBase).filter(
         KnowledgeBase.id == kb_id,
-        (KnowledgeBase.user_id == user.id) | (KnowledgeBase.user_id.is_(None))
+        KnowledgeBase.user_id == user.id,
     ).first()
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
@@ -75,7 +75,7 @@ def delete_kb(kb_id: int, db: Session = Depends(get_db), user=Depends(get_curren
         raise HTTPException(status_code=400, detail="不能删除默认知识库")
     kb = db.query(KnowledgeBase).filter(
         KnowledgeBase.id == kb_id,
-        (KnowledgeBase.user_id == user.id) | (KnowledgeBase.user_id.is_(None))
+        KnowledgeBase.user_id == user.id,
     ).first()
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")

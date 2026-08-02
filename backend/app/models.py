@@ -29,6 +29,7 @@ class KnowledgeBase(Base):
 class Tag(Base):
     __tablename__ = "tags"
     id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(Integer, nullable=True)  # backfilled by migration 0002
     name       = Column(String(50), nullable=False, unique=True)
     color      = Column(String(20), default="default")
     created_at = Column(DateTime, default=datetime.utcnow)

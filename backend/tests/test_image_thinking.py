@@ -83,7 +83,7 @@ async def test_rag_query_with_image_emits_events(
             image_base64="data:image/png;base64,abc123",
             conversation_id=None,
             db=mock_db,
-            kb_id=None,
+            scope=None,
             user_id=1,
         ):
             raw_events += event
@@ -156,7 +156,7 @@ async def test_rag_query_with_thinking_emits_thinking_event(
             question="请深度思考这个问题",
             conversation_id=None,
             db=mock_db,
-            kb_id=None,
+            scope=None,
             user_id=1,
         ):
             raw_events += event
