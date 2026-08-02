@@ -1,9 +1,23 @@
 """Test settings API endpoints."""
 
+import pytest
 
-def test_get_settings(client):
+
+@pytest.fixture
+def owner_client(client):
+    """Client with the require_owner dependency overridden to allow access."""
+    from app.auth import require_owner
+
     c, _ = client
-    response = c.get("/api/settings")
+    from types import SimpleNamespace
+
+    c.app.dependency_overrides[require_owner] = lambda: SimpleNamespace(id=1, username="owner")
+    yield c
+    c.app.dependency_overrides.pop(require_owner, None)
+
+
+def test_get_settings(owner_client):
+    response = owner_client.get("/api/settings")
     assert response.status_code == 200
     data = response.json()
     assert "llm_base_url" in data
@@ -15,9 +29,8 @@ def test_get_settings(client):
     assert "query_rewrite_enabled" in data
 
 
-def test_update_settings(client):
-    c, _ = client
-    response = c.put(
+def test_update_settings(owner_client):
+    response = owner_client.put(
         "/api/settings",
         json={"top_k": 10, "temperature": 0.5},
     )

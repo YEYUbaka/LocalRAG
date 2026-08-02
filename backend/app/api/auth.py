@@ -1,9 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.models import User
-from app.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    require_owner,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -18,8 +24,8 @@ def get_db():
 
 
 class RegisterRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=2, max_length=50)
+    password: str = Field(min_length=12, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -29,8 +35,8 @@ class LoginRequest(BaseModel):
 
 @router.post("/register")
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
-    if len(data.username) < 2 or len(data.password) < 4:
-        raise HTTPException(status_code=400, detail="用户名至少2字符，密码至少4字符")
+    if db.query(User.id).first() is not None:
+        raise HTTPException(status_code=403, detail="注册已关闭")
 
     existing = db.query(User).filter(User.username == data.username).first()
     if existing:
