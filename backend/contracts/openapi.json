@@ -332,10 +332,14 @@
       "RegisterRequest": {
         "properties": {
           "password": {
+            "maxLength": 128,
+            "minLength": 12,
             "title": "Password",
             "type": "string"
           },
           "username": {
+            "maxLength": 50,
+            "minLength": 2,
             "title": "Username",
             "type": "string"
           }
@@ -371,6 +375,10 @@
           },
           "hybrid_search": {
             "title": "Hybrid Search",
+            "type": "boolean"
+          },
+          "llm_api_key_configured": {
+            "title": "Llm Api Key Configured",
             "type": "boolean"
           },
           "llm_base_url": {
@@ -440,7 +448,8 @@
           "rerank_enabled",
           "rerank_threshold",
           "query_rewrite_enabled",
-          "web_search_enabled"
+          "web_search_enabled",
+          "llm_api_key_configured"
         ],
         "title": "SettingsResponse",
         "type": "object"
@@ -479,17 +488,6 @@
               }
             ],
             "title": "Hybrid Search"
-          },
-          "llm_api_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Llm Api Key"
           },
           "llm_base_url": {
             "anyOf": [
@@ -1809,6 +1807,22 @@
         ]
       }
     },
+    "/api/ready": {
+      "get": {
+        "operationId": "readiness_api_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness"
+      }
+    },
     "/api/settings": {
       "get": {
         "operationId": "get_settings_api_settings_get",
@@ -1824,6 +1838,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Settings",
         "tags": [
           "settings"
@@ -1863,6 +1882,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Update Settings",
         "tags": [
           "settings"
@@ -1871,7 +1895,7 @@
     },
     "/api/tags": {
       "get": {
-        "description": "列出所有标签，附带文档数量。",
+        "description": "列出当前用户的标签，附带文档数量。",
         "operationId": "list_tags_api_tags_get",
         "responses": {
           "200": {
