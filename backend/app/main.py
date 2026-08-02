@@ -17,7 +17,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
-from app.models import Base
 from app.api.documents import router as documents_router
 from app.api.chat import router as chat_router
 from app.api.settings import router as settings_router
@@ -29,63 +28,19 @@ from app.api.tags import router as tags_router
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base.metadata.create_all(bind=engine)
 
+def check_database_revision(engine) -> bool:
+    """Read-only check that the database schema matches the Alembic head."""
+    from alembic.migration import MigrationContext
+    from alembic.script import ScriptDirectory
 
-def migrate_db(engine):
-    """Add missing columns to existing tables."""
-    import sqlalchemy as sa
+    script = ScriptDirectory(str(Path(__file__).resolve().parents[1] / "alembic"))
+    head = script.get_current_head()
     with engine.connect() as conn:
-        inspector = sa.inspect(engine)
-        existing_cols = {c["name"] for c in inspector.get_columns("documents")}
-        if "parsed_content" not in existing_cols:
-            conn.execute(sa.text("ALTER TABLE documents ADD COLUMN parsed_content TEXT"))
-        if "page_breaks" not in existing_cols:
-            conn.execute(sa.text("ALTER TABLE documents ADD COLUMN page_breaks JSON"))
-        if "chunk_count" not in existing_cols:
-            conn.execute(sa.text("ALTER TABLE documents ADD COLUMN chunk_count INTEGER DEFAULT 0"))
-        # Create knowledge_bases table if not exists
-        if "knowledge_bases" not in inspector.get_table_names():
-            conn.execute(sa.text("""
-                CREATE TABLE knowledge_bases (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    name VARCHAR(100) NOT NULL,
-                    description TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
-        # Add kb_id to documents if missing
-        if "kb_id" not in existing_cols:
-            conn.execute(sa.text("ALTER TABLE documents ADD COLUMN kb_id INT DEFAULT 1"))
+        context = MigrationContext.configure(conn)
+        current = context.get_current_revision()
+    return current == head
 
-        # Create users table if not exists
-        if "users" not in inspector.get_table_names():
-            conn.execute(sa.text("""
-                CREATE TABLE users (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    username VARCHAR(50) NOT NULL UNIQUE,
-                    password_hash VARCHAR(255) NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
-
-        # Add user_id to documents, conversations, knowledge_bases if missing
-        for table in ["documents", "conversations", "knowledge_bases"]:
-            table_cols = {c["name"] for c in inspector.get_columns(table)}
-            if "user_id" not in table_cols:
-                conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN user_id INT"))
-
-        conn.commit()
-
-    # Ensure default KB exists
-    with engine.connect() as conn:
-        result = conn.execute(sa.text("SELECT COUNT(*) FROM knowledge_bases"))
-        if result.scalar() == 0:
-            conn.execute(sa.text("INSERT INTO knowledge_bases (id, name, description) VALUES (1, '默认知识库', '系统默认知识库')"))
-            conn.commit()
-
-
-migrate_db(engine)
 
 app = FastAPI(title="LocalRAG", version="0.1.0")
 
@@ -104,6 +59,17 @@ app.include_router(settings_router)
 app.include_router(kb_router)
 app.include_router(export_router)
 app.include_router(tags_router)
+
+
+@app.get("/api/ready")
+def readiness():
+    try:
+        ready = check_database_revision(engine)
+    except Exception:
+        ready = False
+    if not ready:
+        return {"status": "not_ready", "reason": "database_revision_mismatch"}
+    return {"status": "ready"}
 
 
 @app.on_event("startup")
