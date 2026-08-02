@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Card, Form, Input, Button, Typography, message, Space } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { login, register } from '../services/api';
+import { getErrorMessage } from '../services/errors';
 
 const { Title, Text } = Typography;
 
 interface Props {
-  onLogin: (token: string, user: { id: number; username: string }) => void;
+  onLogin: (user: { id: number; username: string }) => void;
 }
 
 export default function LoginPage({ onLogin }: Props) {
@@ -19,9 +20,9 @@ export default function LoginPage({ onLogin }: Props) {
       const fn = isRegister ? register : login;
       const result = await fn(values.username, values.password);
       message.success(isRegister ? '注册成功' : '登录成功');
-      onLogin(result.token, result.user);
-    } catch (e: any) {
-      message.error(e.message || '操作失败');
+      onLogin(result.user);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e, '操作失败'));
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { DocumentContent } from '../types';
 import { getDocumentContent } from '../services/api';
+import { getErrorMessage } from '../services/errors';
 
 const { Text } = Typography;
 
@@ -18,7 +19,7 @@ export default function DocumentPreviewPanel({ docId, highlightSnippet, onClose 
   const [content, setContent] = useState<DocumentContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const loadContent = useCallback(async () => {
     setLoading(true);
@@ -26,15 +27,18 @@ export default function DocumentPreviewPanel({ docId, highlightSnippet, onClose 
     try {
       const data = await getDocumentContent(docId);
       setContent(data);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, '加载失败'));
     } finally {
       setLoading(false);
     }
   }, [docId]);
 
   useEffect(() => {
-    loadContent();
+    const timer = setTimeout(() => {
+      void loadContent();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadContent]);
 
   // Highlight and scroll after content loads
@@ -55,7 +59,6 @@ export default function DocumentPreviewPanel({ docId, highlightSnippet, onClose 
         const idx = nodeText.indexOf(searchStr);
         if (idx === -1) continue;
 
-        // Found — use extractContents/insertNode (safe across node boundaries)
         const range = document.createRange();
         range.setStart(node, idx);
         range.setEnd(node, idx + searchStr.length);

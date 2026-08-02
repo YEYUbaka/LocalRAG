@@ -17,7 +17,7 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [previewDocId, setPreviewDocId] = useState<number | null>(null);
 
-  const handlePreviewChange = (docId: number | null, _snippet?: string) => {
+  const handlePreviewChange = (docId: number | null) => {
     setPreviewDocId(docId);
   };
 
@@ -35,7 +35,7 @@ export default function App() {
     if (isMobile) setDrawerOpen(false);
   };
 
-  const handleLogin = (token: string, user: { id: number; username: string }) => {
+  const handleLogin = (user: { id: number; username: string }) => {
     setAuthenticated(true);
     setUsername(user.username);
   };

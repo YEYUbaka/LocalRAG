@@ -79,3 +79,15 @@ export interface KnowledgeBase {
   created_at: string | null;
   doc_count: number;
 }
+
+export type BatchImportResult =
+  | { url: string; status: 'pending'; id: number }
+  | { url: string; status: 'skipped'; detail: string };
+
+export interface BatchImportResponse {
+  imported: number;
+  results: BatchImportResult[];
+}
+
+export interface SSEBaseV1 { schema_version: 1 }
+export interface SSEDoneV1 extends SSEBaseV1 { conversation_id: number }

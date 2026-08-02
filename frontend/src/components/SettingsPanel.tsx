@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Form, Input, Slider, InputNumber, Button, message, Space, Typography, Switch, Select, Divider, Tag } from 'antd';
 import type { Settings } from '../types';
 import { getSettings, updateSettings } from '../services/api';
+import { getErrorMessage } from '../services/errors';
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -113,7 +114,7 @@ export default function SettingsPanel() {
     if (!settings) return;
     setLoading(true);
     try {
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         llm_base_url: settings.llm_base_url,
         llm_model_name: settings.llm_model_name,
         top_k: settings.top_k,
@@ -137,8 +138,8 @@ export default function SettingsPanel() {
       setSettings(updated);
       setApiKey('');
       message.success('设置已保存');
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     } finally {
       setLoading(false);
     }

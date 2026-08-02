@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import type { Conversation, KnowledgeBase } from '../types';
 import { listConversations, deleteConversation, listKBs, createKB, deleteKB, getExportUrl } from '../services/api';
+import { getErrorMessage } from '../services/errors';
 import DocumentList from './DocumentList';
 import SettingsPanel from './SettingsPanel';
 
@@ -37,8 +38,8 @@ export default function Sidebar({ currentConversationId, onSelectConversation, r
     try {
       const data = await listConversations();
       setConversations(data);
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     }
   };
 
@@ -46,18 +47,24 @@ export default function Sidebar({ currentConversationId, onSelectConversation, r
     try {
       const data = await listKBs();
       setKbs(data);
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     }
   };
 
   useEffect(() => {
-    loadKBs();
+    const timer = setTimeout(() => {
+      void loadKBs();
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
     if (tab === 'conversations') {
-      loadConversations();
+      const timer = setTimeout(() => {
+        void loadConversations();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [tab, refreshTrigger]);
 
@@ -69,8 +76,8 @@ export default function Sidebar({ currentConversationId, onSelectConversation, r
         onSelectConversation(null);
       }
       await loadConversations();
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (err: unknown) {
+      message.error(getErrorMessage(err));
     }
   };
 
@@ -83,8 +90,8 @@ export default function Sidebar({ currentConversationId, onSelectConversation, r
       setNewKbName('');
       setNewKbDesc('');
       await loadKBs();
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (err: unknown) {
+      message.error(getErrorMessage(err));
     }
   };
 
@@ -96,8 +103,8 @@ export default function Sidebar({ currentConversationId, onSelectConversation, r
         onKbChange(1);
       }
       await loadKBs();
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (err: unknown) {
+      message.error(getErrorMessage(err));
     }
   };
 
