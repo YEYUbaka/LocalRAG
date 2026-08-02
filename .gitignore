@@ -38,3 +38,10 @@ Thumbs.db
 
 # ChromaDB
 chromadb/
+
+# Local dev files (not for public release)
+plans/
+start.bat
+初版方案.md
+.claude/
+
