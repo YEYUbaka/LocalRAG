@@ -33,7 +33,6 @@ with (
         __import__("app.models", fromlist=["Base"]).Base.metadata,
         "create_all",
     ),
-    patch("app.main.migrate_db"),
 ):
     mock_sessionmaker.return_value = _mock_session_local
     from app.main import app

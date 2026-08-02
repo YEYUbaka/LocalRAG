@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Document
-from app.core.vectorstore import add_documents, delete_by_doc_id
+from app.core.vectorstore import add_documents, delete_by_document_id
+from app.domain.tenant import TenantScope
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +106,13 @@ def process_document(doc_id: int, db_session_factory) -> None:
         texts, metadatas = split_documents(raw_docs, doc.filename)
         doc.chunk_count = len(texts)
 
-        add_documents(doc_id, texts, metadatas, kb_id=doc.kb_id)
+        scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
+        add_documents(scope, doc_id, texts, metadatas)
 
         # Sync BM25 index
         try:
             from app.core.bm25_search import add_document_chunks
-            add_document_chunks(doc_id, texts, kb_id=doc.kb_id, metadatas=metadatas)
+            add_document_chunks(scope, doc_id, texts, metadatas=metadatas)
         except Exception as e:
             logger.warning(f"BM25 sync failed for doc {doc_id}: {e}")
 
@@ -142,8 +144,9 @@ async def process_url_import(doc_id: int, url: str):
 
         lc_doc = await fetch_single_url(url)
         texts, metadatas = split_documents([lc_doc], doc.filename)
-        add_documents(doc_id, texts, metadatas, doc.kb_id)
-        add_document_chunks(doc_id, texts, doc.kb_id, metadatas)
+        scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
+        add_documents(scope, doc_id, texts, metadatas)
+        add_document_chunks(scope, doc_id, texts, metadatas)
 
         doc.parsed_content = lc_doc.page_content
         doc.chunk_count = len(texts)
@@ -183,8 +186,9 @@ async def process_crawl_import(doc_id: int, start_url: str, max_pages: int, max_
 
         all_text = "\n\n---\n\n".join(d.page_content for d in lc_docs)
         texts, metadatas = split_documents(lc_docs, doc.filename)
-        add_documents(doc_id, texts, metadatas, doc.kb_id)
-        add_document_chunks(doc_id, texts, doc.kb_id, metadatas)
+        scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
+        add_documents(scope, doc_id, texts, metadatas)
+        add_document_chunks(scope, doc_id, texts, metadatas)
 
         doc.parsed_content = all_text
         doc.chunk_count = len(texts)
@@ -206,7 +210,8 @@ def delete_document(doc_id: int, db: Session) -> None:
     if not doc:
         raise ValueError(f"文档 {doc_id} 不存在")
 
-    delete_by_doc_id(doc_id)
+    scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
+    delete_by_document_id(scope, doc_id)
 
     # Remove from BM25 index
     try:

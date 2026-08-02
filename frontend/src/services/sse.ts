@@ -1,53 +1,85 @@
-import type { Source } from '../types';
+import type { Source, SSEDoneV1 } from '../types';
 
-interface SSECallbacks {
+export interface SSECallbacks {
   onToken?: (content: string) => void;
   onSources?: (sources: Source[]) => void;
-  onDone?: (data: { conversation_id: number }) => void;
+  onDone?: (data: SSEDoneV1, sources: Source[]) => void;
   onError?: (error: string) => void;
   onThinking?: (status: string, message: string) => void;
 }
 
-async function _consumeSSEStream(
+export async function consumeSSEStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   callbacks: SSECallbacks,
 ): Promise<void> {
   const decoder = new TextDecoder();
   let buffer = '';
-
+  let latestSources: Source[] = [];
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    let eventType = '';
-    for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        eventType = line.slice(7).trim();
-      } else if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        try {
-          const parsed = JSON.parse(data);
-          if (eventType === 'token') {
-            callbacks.onToken?.(parsed.content);
-          } else if (eventType === 'sources') {
-            callbacks.onSources?.(parsed.sources);
-          } else if (eventType === 'done') {
-            callbacks.onDone?.(parsed);
-          } else if (eventType === 'error') {
-            callbacks.onError?.(parsed.message || '发生未知错误');
-          } else if (eventType === 'thinking') {
-            callbacks.onThinking?.(parsed.status, parsed.message);
-          }
-        } catch {
-          // ignore parse errors
-        }
+    buffer += decoder.decode(value, { stream: !done });
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() ?? '';
+    for (const frame of frames) {
+      const lines = frame.split('\n');
+      const eventType = lines.find((line) => line.startsWith('event:'))?.slice(6).trim();
+      const data = lines.find((line) => line.startsWith('data:'))?.slice(5).trim();
+      if (!eventType || !data) continue;
+      const parsed: unknown = JSON.parse(data);
+      if (eventType === 'token') callbacks.onToken?.((parsed as { content: string }).content);
+      if (eventType === 'sources') {
+        latestSources = (parsed as { sources: Source[] }).sources;
+        callbacks.onSources?.(latestSources);
+      }
+      if (eventType === 'done') callbacks.onDone?.(parsed as SSEDoneV1, latestSources);
+      if (eventType === 'error') callbacks.onError?.((parsed as { message: string }).message);
+      if (eventType === 'thinking') {
+        const thinking = parsed as { status: string; message: string };
+        callbacks.onThinking?.(thinking.status, thinking.message);
       }
     }
+    if (done) break;
   }
+}
+
+function streamChatImpl(
+  url: string,
+  body: Record<string, unknown>,
+  callbacks: SSECallbacks,
+): EventSource {
+  const controller = new AbortController();
+  const token = localStorage.getItem('token');
+
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        callbacks.onError?.(err.detail || '请求失败');
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) return;
+
+      await consumeSSEStream(reader, callbacks);
+    })
+    .catch((err: unknown) => {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        callbacks.onError?.(err.message);
+      }
+    });
+
+  return {
+    close: () => controller.abort(),
+  } as unknown as EventSource;
 }
 
 export function streamChat(
@@ -57,49 +89,13 @@ export function streamChat(
   kbId?: number | null,
   thinkingMode: boolean = false,
 ): EventSource {
-  const params = new URLSearchParams();
-  // We use fetch with ReadableStream for POST SSE since EventSource only supports GET
-  const controller = new AbortController();
-
-  const token = localStorage.getItem('token');
-  fetch('/api/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({
-      question,
-      conversation_id: conversationId,
-      kb_id: kbId,
-      thinking_mode: thinkingMode,
-    }),
-    signal: controller.signal,
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        callbacks.onError?.(err.detail || '请求失败');
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) return;
-
-      await _consumeSSEStream(reader, callbacks);
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError?.(err.message);
-      }
-    });
-
-  // Return a dummy EventSource-like object for compatibility
-  return {
-    close: () => controller.abort(),
-  } as unknown as EventSource;
+  return streamChatImpl('/api/chat', {
+    question,
+    conversation_id: conversationId,
+    kb_id: kbId,
+    thinking_mode: thinkingMode,
+  }, callbacks);
 }
-
 
 export function streamImageAnalysis(
   question: string,
@@ -108,42 +104,10 @@ export function streamImageAnalysis(
   callbacks: SSECallbacks,
   kbId?: number | null,
 ): EventSource {
-  const controller = new AbortController();
-  const token = localStorage.getItem('token');
-
-  fetch('/api/chat/image', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({
-      question,
-      image_base64: imageBase64,
-      conversation_id: conversationId,
-      kb_id: kbId,
-    }),
-    signal: controller.signal,
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        callbacks.onError?.(err.detail || '请求失败');
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) return;
-
-      await _consumeSSEStream(reader, callbacks);
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') {
-        callbacks.onError?.(err.message);
-      }
-    });
-
-  return {
-    close: () => controller.abort(),
-  } as unknown as EventSource;
+  return streamChatImpl('/api/chat/image', {
+    question,
+    image_base64: imageBase64,
+    conversation_id: conversationId,
+    kb_id: kbId,
+  }, callbacks);
 }

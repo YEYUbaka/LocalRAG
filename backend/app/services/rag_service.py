@@ -11,6 +11,7 @@ from app.services.llm_service import get_chat_model, get_thinking_model
 from app.services.web_search_service import web_search
 from app.config import settings
 from app.models import Conversation, Message
+from app.domain.tenant import TenantScope
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +120,11 @@ def build_messages(question: str, sources: list[dict], history: list) -> list:
 
 async def _retrieve_sources(
     question: str,
-    kb_id: int | None,
+    scope: "TenantScope | None",
 ) -> list[dict]:
     """公共检索逻辑：查询改写 + 混合搜索 + 联网回退。"""
+    if scope is None:
+        return []
     if settings.query_rewrite_enabled:
         from app.services.query_rewrite import rewrite_query
         queries = await rewrite_query(question)
@@ -129,7 +132,7 @@ async def _retrieve_sources(
         all_sources = []
         seen_ids: set[str] = set()
         for q in queries:
-            results = hybrid_search(q, kb_id=kb_id)
+            results = hybrid_search(scope, q)
             for r in results:
                 if r["id"] not in seen_ids:
                     seen_ids.add(r["id"])
@@ -137,9 +140,9 @@ async def _retrieve_sources(
 
         sources = all_sources[:settings.rerank_top_k]
     else:
-        sources = hybrid_search(question, kb_id=kb_id)
+        sources = hybrid_search(scope, question)
 
-    sources = await _try_web_search(question, sources, kb_id)
+    sources = await _try_web_search(question, sources, scope.kb_id)
     return sources
 
 
@@ -147,11 +150,11 @@ async def rag_query(
     question: str,
     conversation_id: int | None,
     db: Session,
-    kb_id: int | None = None,
+    scope: "TenantScope | None" = None,
     user_id: int | None = None,
 ) -> AsyncGenerator[str, None]:
     try:
-        sources = await _retrieve_sources(question, kb_id)
+        sources = await _retrieve_sources(question, scope)
 
         # 计算 token 预算
         context_window = getattr(settings, 'context_window', DEFAULT_CONTEXT_WINDOW)
@@ -240,7 +243,7 @@ async def rag_query_with_image(
     image_base64: str,
     conversation_id: int | None,
     db: Session,
-    kb_id: int | None = None,
+    scope: "TenantScope | None" = None,
     user_id: int | None = None,
 ) -> AsyncGenerator[str, None]:
     """图片理解模式的 RAG 查询，使用视觉模型分析图片"""
@@ -265,8 +268,8 @@ async def rag_query_with_image(
 
         # 如果有知识库上下文，先检索相关内容
         sources = []
-        if kb_id:
-            sources = hybrid_search(question, kb_id=kb_id)
+        if scope is not None:
+            sources = hybrid_search(scope, question)
 
         # 添加知识库上下文到问题中
         if sources:
@@ -362,7 +365,7 @@ async def rag_query_with_thinking(
     question: str,
     conversation_id: int | None,
     db: Session,
-    kb_id: int | None = None,
+    scope: "TenantScope | None" = None,
     user_id: int | None = None,
 ) -> AsyncGenerator[str, None]:
     """深度思考模式的 RAG 查询，使用更强大的模型和更长的推理时间"""
@@ -370,7 +373,7 @@ async def rag_query_with_thinking(
         # 发送思考开始事件
         yield f"event: thinking\ndata: {json.dumps({'status': 'started', 'message': '正在深度思考中...'}, ensure_ascii=False)}\n\n"
 
-        sources = await _retrieve_sources(question, kb_id)
+        sources = await _retrieve_sources(question, scope)
 
         # 计算 token 预算
         context_window = getattr(settings, 'context_window', DEFAULT_CONTEXT_WINDOW)

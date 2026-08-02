@@ -1,0 +1,129 @@
+name: Quality Gates
+
+on:
+  pull_request:
+  push:
+    branches: [master, integration/knowledge-quality]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.11"
+          activate-environment: localrag
+          auto-update-conda: true
+      - name: Install backend dependencies
+        shell: bash -el {0}
+        run: |
+          pip install -r backend/requirements.txt
+      - name: Run backend tests
+        shell: bash -el {0}
+        env:
+          JWT_SECRET: phase-zero-ci-secret-with-at-least-32-bytes
+        run: |
+          python -m pytest backend/tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Frontend tests
+        run: npm test
+      - name: Frontend lint
+        run: npm run lint
+      - name: Frontend build
+        run: npm run build
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.11"
+          activate-environment: localrag
+          auto-update-conda: true
+      - name: Install backend dependencies
+        shell: bash -el {0}
+        run: pip install -r backend/requirements.txt
+      - name: Contract snapshot check
+        shell: bash -el {0}
+        env:
+          JWT_SECRET: phase-zero-ci-secret-with-at-least-32-bytes
+        run: |
+          cd backend
+          python scripts/export_contracts.py --output contracts --check
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: localrag_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.11"
+          activate-environment: localrag
+          auto-update-conda: true
+      - name: Install backend dependencies
+        shell: bash -el {0}
+        run: pip install -r backend/requirements.txt
+      - name: Alembic upgrade head
+        shell: bash -el {0}
+        env:
+          DATABASE_URL: mysql+pymysql://root:root@127.0.0.1:3306/localrag_test
+        run: |
+          cd backend
+          alembic upgrade head
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.11"
+          activate-environment: localrag
+          auto-update-conda: true
+      - name: Install backend dependencies
+        shell: bash -el {0}
+        run: pip install -r backend/requirements.txt
+      - name: Local secret scan
+        shell: bash -el {0}
+        run: python backend/scripts/check_secrets.py --root .
+      - name: Dependency audit
+        shell: bash -el {0}
+        run: |
+          pip check
+          npm audit --audit-level=high --prefix frontend || true

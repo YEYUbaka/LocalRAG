@@ -1,6 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
 sqlalchemy==2.0.35
+alembic==1.16.5
 pymysql==1.1.1
 cryptography==43.0.0
 langchain==0.3.0

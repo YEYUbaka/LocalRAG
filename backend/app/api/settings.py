@@ -1,9 +1,18 @@
-from fastapi import APIRouter
-from pydantic import BaseModel
+import os
+from urllib.parse import urlparse
 
-from app.config import settings, _save_overrides
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, field_validator
+
+from app.auth import require_owner
+from app.config import settings, _save_overrides, PERSISTED_FIELDS
 
 router = APIRouter(prefix="/api", tags=["settings"])
+
+
+def _llm_api_key_configured() -> bool:
+    value = os.environ.get("LLM_API_KEY", "")
+    return bool(value)
 
 
 class SettingsResponse(BaseModel):
@@ -25,11 +34,11 @@ class SettingsResponse(BaseModel):
     rerank_threshold: float
     query_rewrite_enabled: bool
     web_search_enabled: bool
+    llm_api_key_configured: bool
 
 
 class SettingsUpdate(BaseModel):
     llm_base_url: str | None = None
-    llm_api_key: str | None = None
     llm_model_name: str | None = None
     top_k: int | None = None
     temperature: float | None = None
@@ -44,6 +53,29 @@ class SettingsUpdate(BaseModel):
     rerank_threshold: float | None = None
     query_rewrite_enabled: bool | None = None
     web_search_enabled: bool | None = None
+
+    @field_validator("llm_base_url")
+    @classmethod
+    def validate_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        parsed = urlparse(value)
+        if parsed.scheme != "https":
+            raise ValueError("LLM Base URL 必须是 HTTPS 地址")
+        if parsed.username or parsed.password:
+            raise ValueError("LLM Base URL 不能包含用户信息")
+        if parsed.fragment:
+            raise ValueError("LLM Base URL 不能包含片段")
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("LLM Base URL 缺少主机名")
+        allowed = os.environ.get("LLM_ALLOWED_HOSTS", "dashscope.aliyuncs.com,api.deepseek.com,api.moonshot.cn,ark.cn-beijing.volces.com,api.openai.com,localhost")
+        if hostname not in {h.strip() for h in allowed.split(",")}:
+            raise ValueError("LLM Base URL 主机不在允许列表内")
+        port = parsed.port
+        if port is not None and port != 443:
+            raise ValueError("LLM Base URL 端口必须为 443")
+        return value
 
 
 def _build_response() -> SettingsResponse:
@@ -66,20 +98,19 @@ def _build_response() -> SettingsResponse:
         rerank_threshold=settings.rerank_threshold,
         query_rewrite_enabled=settings.query_rewrite_enabled,
         web_search_enabled=settings.web_search_enabled,
+        llm_api_key_configured=_llm_api_key_configured(),
     )
 
 
-@router.get("/settings", response_model=SettingsResponse)
+@router.get("/settings", response_model=SettingsResponse, dependencies=[Depends(require_owner)])
 def get_settings():
     return _build_response()
 
 
-@router.put("/settings", response_model=SettingsResponse)
+@router.put("/settings", response_model=SettingsResponse, dependencies=[Depends(require_owner)])
 def update_settings(update: SettingsUpdate):
     if update.llm_base_url is not None:
         settings.llm_base_url = update.llm_base_url
-    if update.llm_api_key is not None:
-        settings.llm_api_key = update.llm_api_key
     if update.llm_model_name is not None:
         settings.llm_model_name = update.llm_model_name
     if update.top_k is not None:

@@ -1,4 +1,4 @@
-import type { Document, Conversation, Settings, DocumentContent, KnowledgeBase, Tag } from '../types';
+import type { Document, Conversation, Settings, DocumentContent, KnowledgeBase, Tag, BatchImportResponse } from '../types';
 
 const BASE = '/api';
 
@@ -65,7 +65,7 @@ export async function importUrl(url: string, kbId: number = 1): Promise<{ id: nu
   });
 }
 
-export async function importBatchUrls(urls: string[], kbId: number = 1): Promise<{ imported: number; documents: { id: number; filename: string; status: string }[] }> {
+export async function importBatchUrls(urls: string[], kbId: number = 1): Promise<BatchImportResponse> {
   return request('/documents/import-batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

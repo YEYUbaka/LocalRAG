@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 PERSISTED_FIELDS = {
-    "llm_base_url", "llm_api_key", "llm_model_name",
+    "llm_base_url", "llm_model_name",
     "top_k", "temperature", "max_tokens", "context_window",
     "similarity_threshold", "max_upload_size",
     "hybrid_search", "bm25_weight", "retrieval_top_k", "rerank_top_k",
@@ -83,6 +83,8 @@ def _load_overrides(s: Settings) -> None:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        # Never load persisted secret material back into settings
+        data.pop("llm_api_key", None)
         for key, value in data.items():
             if key in PERSISTED_FIELDS and hasattr(s, key):
                 setattr(s, key, value)

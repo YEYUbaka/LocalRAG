@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Upload, message, Tag, Popconfirm, Typography, Space, Input, Select, Popover, Checkbox, Tabs, InputNumber } from 'antd';
 import {
-  UploadOutlined, DeleteOutlined, FilePdfOutlined, FileTextOutlined,
+  DeleteOutlined, FilePdfOutlined, FileTextOutlined,
   FileWordOutlined, InboxOutlined, ReloadOutlined, SearchOutlined,
-  TagsOutlined, PlusOutlined, CloseCircleFilled, LinkOutlined, GlobalOutlined,
+  TagsOutlined, PlusOutlined, LinkOutlined, GlobalOutlined,
 } from '@ant-design/icons';
-import type { Document, Tag as TagType } from '../types';
+import type { Document, Tag as TagType, BatchImportResult } from '../types';
 import { listDocuments, uploadDocument, deleteDocument, getDocumentStatus, reprocessDocument, listTags, createTag, attachTag, detachTag, importUrl, importBatchUrls, importCrawlSite } from '../services/api';
+import { getErrorMessage } from '../services/errors';
 
 const { Dragger } = Upload;
 const { Text } = Typography;
@@ -48,7 +49,7 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
   const [maxPages, setMaxPages] = useState(20);
   const [maxDepth, setMaxDepth] = useState(2);
   const [importing, setImporting] = useState(false);
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadDocs = useCallback(async () => {
     try {
@@ -59,8 +60,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
         tagId: tagFilter,
       });
       setDocs(data);
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     }
   }, [currentKbId, searchText, statusFilter, tagFilter]);
 
@@ -74,14 +75,17 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
   }, []);
 
   useEffect(() => {
-    loadTags();
+    const timer = setTimeout(() => {
+      void loadTags();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [loadTags]);
 
   // Debounced search
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
-      loadDocs();
+      void loadDocs();
     }, 300);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [loadDocs]);
@@ -93,8 +97,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
       message.success(`上传成功: ${result.filename}`);
       await loadDocs();
       pollStatus(result.id);
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -123,8 +127,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
       await deleteDocument(id);
       message.success('已删除');
       await loadDocs();
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     }
   };
 
@@ -134,8 +138,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
       message.success('已开始重新处理');
       await loadDocs();
       pollStatus(id);
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     }
   };
 
@@ -143,8 +147,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
     try {
       await attachTag(docId, tagId);
       await loadDocs();
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     }
   };
 
@@ -152,8 +156,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
     try {
       await detachTag(docId, tagId);
       await loadDocs();
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     }
   };
 
@@ -165,8 +169,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
       setNewTagColor('default');
       await loadTags();
       message.success('标签已创建');
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     }
   };
 
@@ -179,8 +183,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
       setUrlInput('');
       await loadDocs();
       pollStatus(result.id);
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     } finally {
       setImporting(false);
     }
@@ -192,12 +196,13 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
     setImporting(true);
     try {
       const result = await importBatchUrls(urls, currentKbId);
-      message.success(`已提交 ${result.imported} 个 URL`);
+      const pending = result.results.filter((r: BatchImportResult) => r.status === 'pending');
+      message.success(`已提交 ${pending.length} 个 URL`);
       setBatchUrls('');
       await loadDocs();
-      result.documents.forEach(d => pollStatus(d.id));
-    } catch (e: any) {
-      message.error(e.message);
+      pending.forEach(d => pollStatus(d.id));
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     } finally {
       setImporting(false);
     }
@@ -212,8 +217,8 @@ export default function DocumentList({ onDocumentClick, currentKbId }: Props) {
       setCrawlUrl('');
       await loadDocs();
       pollStatus(result.id);
-    } catch (e: any) {
-      message.error(e.message);
+    } catch (e: unknown) {
+      message.error(getErrorMessage(e));
     } finally {
       setImporting(false);
     }

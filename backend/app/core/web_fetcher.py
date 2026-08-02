@@ -1,15 +1,17 @@
 """网页内容抓取模块。
 
 支持单页抓取、批量抓取和整站爬取，将网页正文提取为 LangChain Document。
+所有网络访问经由 SafeFetcher（SSRF 防护）。
 """
 
 import asyncio
 import re
 from urllib.parse import urljoin, urlparse, urlunparse
 
-import httpx
 from bs4 import BeautifulSoup
 from langchain_core.documents import Document
+
+from app.core.safe_fetcher import FetchError, PublicHttpUrl, SafeFetcher
 
 # 需要移除的标签（非正文内容）
 _REMOVE_TAGS = [
@@ -17,18 +19,8 @@ _REMOVE_TAGS = [
     "aside", "iframe", "noscript", "svg", "form",
 ]
 
-# 默认请求头
-_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Safari/537.36"
-)
-
 # 内容截断上限（500KB）
 _MAX_CONTENT_LENGTH = 500 * 1024
-
-# 请求超时（秒）
-_TIMEOUT = 30.0
 
 
 def _is_same_domain(base_url: str, link: str) -> bool:
@@ -81,22 +73,22 @@ def _extract_text_from_html(html: str, url: str) -> tuple[str, str]:
     return title, text
 
 
-async def fetch_single_url(url: str) -> Document | None:
+async def fetch_single_url(url: str, fetcher: SafeFetcher | None = None) -> Document | None:
     """抓取单个 URL，返回 LangChain Document。
 
-    抓取失败时返回 None。
+    抓取失败或地址被 SSRF 策略拒绝时返回 None。
     """
     try:
-        async with httpx.AsyncClient(
-            headers={"User-Agent": _USER_AGENT},
-            timeout=_TIMEOUT,
-            follow_redirects=True,
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
+        parsed = PublicHttpUrl.parse(url)
+    except FetchError:
+        return None
 
-        html = resp.text
-        title, text = _extract_text_from_html(html, url)
+    owned = fetcher is None
+    fetcher = fetcher or SafeFetcher()
+    try:
+        result = await fetcher.fetch(parsed)
+        html = result.html
+        title, text = _extract_text_from_html(html, result.url)
 
         # 内容过长时截断
         if len(text.encode("utf-8")) > _MAX_CONTENT_LENGTH:
@@ -107,10 +99,13 @@ async def fetch_single_url(url: str) -> Document | None:
 
         return Document(
             page_content=text,
-            metadata={"url": url, "title": title, "type": "web"},
+            metadata={"url": result.url, "title": title, "type": "web"},
         )
-    except Exception:
+    except FetchError:
         return None
+    finally:
+        if owned:
+            await fetcher.aclose()
 
 
 async def fetch_multiple_urls(
@@ -128,7 +123,8 @@ async def fetch_multiple_urls(
 
 
 async def crawl_site(
-    start_url: str, max_pages: int = 50, max_depth: int = 2
+    start_url: str, max_pages: int = 50, max_depth: int = 2,
+    fetcher: SafeFetcher | None = None,
 ) -> list[Document]:
     """BFS 整站爬取同域名页面。
 
@@ -136,61 +132,67 @@ async def crawl_site(
         start_url: 起始 URL
         max_pages: 最大爬取页面数
         max_depth: 最大爬取深度
+        fetcher: 注入的 SafeFetcher（SSRF 防护），不传则自动创建
 
     Returns:
         所有成功抓取的 Document 列表
     """
+    try:
+        start_parsed = PublicHttpUrl.parse(start_url)
+    except FetchError:
+        return []
+
     semaphore = asyncio.Semaphore(5)
     visited: set[str] = set()
     documents: list[Document] = []
     # BFS 队列: (url, depth)
-    queue: list[tuple[str, int]] = [(start_url, 0)]
+    queue: list[tuple[PublicHttpUrl, int]] = [(start_parsed, 0)]
 
-    async with httpx.AsyncClient(
-        headers={"User-Agent": _USER_AGENT},
-        timeout=_TIMEOUT,
-        follow_redirects=True,
-    ) as client:
+    owned = fetcher is None
+    fetcher = fetcher or SafeFetcher()
+    try:
         while queue and len(documents) < max_pages:
             # 取一批待处理的 URL（最多 10 个并发）
-            batch: list[tuple[str, int]] = []
+            batch: list[tuple[PublicHttpUrl, int]] = []
             while queue and len(batch) < 10:
                 url, depth = queue.pop(0)
-                normalized = _normalize_url(url, start_url)
-                if normalized in visited or depth > max_depth:
+                if url.url in visited or depth > max_depth:
                     continue
-                visited.add(normalized)
-                batch.append((normalized, depth))
+                visited.add(url.url)
+                batch.append((url, depth))
 
             if not batch:
                 break
 
             async def _fetch_and_extract(
-                url: str, depth: int
-            ) -> tuple[Document | None, list[tuple[str, int]]]:
+                url: PublicHttpUrl, depth: int
+            ) -> tuple[Document | None, list[tuple[PublicHttpUrl, int]]]:
                 """抓取页面并提取同域名链接。"""
                 async with semaphore:
                     try:
-                        resp = await client.get(url)
-                        resp.raise_for_status()
-                    except Exception:
+                        result = await fetcher.fetch(url)
+                    except FetchError:
                         return None, []
 
-                    html = resp.text
-                    title, text = _extract_text_from_html(html, url)
+                    html = result.html
+                    title, text = _extract_text_from_html(html, result.url)
 
-                    # 提取同域名链接
-                    links: list[tuple[str, int]] = []
+                    # 提取同域名链接（每个链接重新校验）
+                    links: list[tuple[PublicHttpUrl, int]] = []
                     if depth < max_depth:
                         soup = BeautifulSoup(html, "lxml")
                         for a in soup.find_all("a", href=True):
                             href = a["href"]
-                            normalized = _normalize_url(href, url)
+                            normalized = _normalize_url(href, result.url)
                             if (
-                                _is_same_domain(start_url, normalized)
+                                _is_same_domain(start_parsed.host, normalized)
                                 and normalized not in visited
                             ):
-                                links.append((normalized, depth + 1))
+                                try:
+                                    link_url = PublicHttpUrl.parse(normalized)
+                                except FetchError:
+                                    continue
+                                links.append((link_url, depth + 1))
 
                     if not text.strip():
                         return None, links
@@ -201,7 +203,7 @@ async def crawl_site(
 
                     doc = Document(
                         page_content=text,
-                        metadata={"url": url, "title": title, "type": "web"},
+                        metadata={"url": result.url, "title": title, "type": "web"},
                     )
                     return doc, links
 
@@ -212,7 +214,10 @@ async def crawl_site(
                 if doc is not None:
                     documents.append(doc)
                 for link_url, link_depth in new_links:
-                    if link_url not in visited:
+                    if link_url.url not in visited:
                         queue.append((link_url, link_depth))
+    finally:
+        if owned:
+            await fetcher.aclose()
 
     return documents

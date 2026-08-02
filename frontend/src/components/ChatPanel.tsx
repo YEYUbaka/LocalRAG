@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { Input, Button, message, Spin, Tooltip, Upload } from 'antd';
-import { SendOutlined, PlusOutlined, BulbOutlined, PictureOutlined } from '@ant-design/icons';
+import { SendOutlined, BulbOutlined, PictureOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import type { Message, Source, Conversation } from '../types';
+import type { CSSProperties } from 'react';
+import type { Components } from 'react-markdown';
+import type { Message, Source, SSEDoneV1 } from '../types';
 import { getConversation } from '../services/api';
 import { streamChat, streamImageAnalysis } from '../services/sse';
 import SourcePanel from './SourcePanel';
@@ -18,6 +20,8 @@ interface Props {
   onPreviewDocChange: (docId: number | null, snippet?: string) => void;
   currentKbId: number;
 }
+
+const oneDarkStyle: { [key: string]: CSSProperties } = oneDark as unknown as { [key: string]: CSSProperties };
 
 export default function ChatPanel({ conversationId, onNewConversation, previewDocId, onPreviewDocChange, currentKbId }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -62,15 +66,15 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
     onPreviewDocChange(docId, snippet);
   };
 
-  const MarkdownComponents = {
-    code({ node, inline, className, children, ...props }: any) {
+  const MarkdownComponents: Components = {
+    code({ className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || '');
-      return !inline && match ? (
+      return match ? (
         <SyntaxHighlighter
-          style={oneDark}
+          style={oneDarkStyle}
           language={match[1]}
           PreTag="div"
-          {...props}
+          {...(props as Record<string, unknown>)}
         >
           {String(children).replace(/\n$/, '')}
         </SyntaxHighlighter>
@@ -83,13 +87,22 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
   };
 
   useEffect(() => {
-    if (conversationId) {
-      getConversation(conversationId).then((conv) => {
-        setMessages(conv.messages || []);
-      });
-    } else {
-      setMessages([]);
-    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (conversationId) {
+        getConversation(conversationId).then((conv) => {
+          if (!cancelled) {
+            setMessages(conv.messages || []);
+          }
+        });
+      } else {
+        setMessages([]);
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [conversationId]);
 
   useEffect(() => {
@@ -124,7 +137,6 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
     setMessages((prev) => [...prev, userMsg]);
 
     let fullContent = '';
-    let convId = conversationId;
 
     const callbacks = {
       onToken: (content: string) => {
@@ -134,12 +146,12 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
       onSources: (sources: Source[]) => {
         setPendingSources(sources);
       },
-      onDone: (data: { conversation_id: number }) => {
+      onDone: (data: SSEDoneV1, sources: Source[]) => {
         const assistantMsg: Message = {
           id: Date.now() + 1,
           role: 'assistant',
           content: fullContent,
-          sources: pendingSources,
+          sources,
           created_at: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
@@ -147,7 +159,7 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
         setPendingSources(null);
         setLoading(false);
         setThinkingStatus(null);
-        setUploadedImage(null); // 清除已上传的图片
+        setUploadedImage(null);
 
         if (!conversationId && data.conversation_id) {
           onNewConversation(data.conversation_id);
@@ -160,6 +172,7 @@ export default function ChatPanel({ conversationId, onNewConversation, previewDo
         setThinkingStatus(null);
       },
       onThinking: (status: string, msg: string) => {
+        void status;
         setThinkingStatus(msg);
       },
     };
