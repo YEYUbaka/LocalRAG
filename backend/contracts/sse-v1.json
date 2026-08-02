@@ -1,0 +1,247 @@
+{
+  "done": {
+    "additionalProperties": false,
+    "properties": {
+      "conversation_id": {
+        "exclusiveMinimum": 0,
+        "title": "Conversation Id",
+        "type": "integer"
+      },
+      "schema_version": {
+        "const": 1,
+        "default": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "conversation_id"
+    ],
+    "title": "DoneEventV1",
+    "type": "object"
+  },
+  "error": {
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": 1,
+        "default": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "title": "ErrorEventV1",
+    "type": "object"
+  },
+  "source": {
+    "additionalProperties": false,
+    "properties": {
+      "doc_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Doc Id"
+      },
+      "file": {
+        "title": "File",
+        "type": "string"
+      },
+      "page": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Page"
+      },
+      "snippet": {
+        "title": "Snippet",
+        "type": "string"
+      },
+      "type": {
+        "default": "document",
+        "enum": [
+          "document",
+          "web"
+        ],
+        "title": "Type",
+        "type": "string"
+      },
+      "url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Url"
+      }
+    },
+    "required": [
+      "file",
+      "snippet"
+    ],
+    "title": "SourceV1",
+    "type": "object"
+  },
+  "sources": {
+    "$defs": {
+      "SourceV1": {
+        "additionalProperties": false,
+        "properties": {
+          "doc_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Doc Id"
+          },
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Page"
+          },
+          "snippet": {
+            "title": "Snippet",
+            "type": "string"
+          },
+          "type": {
+            "default": "document",
+            "enum": [
+              "document",
+              "web"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Url"
+          }
+        },
+        "required": [
+          "file",
+          "snippet"
+        ],
+        "title": "SourceV1",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": 1,
+        "default": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      },
+      "sources": {
+        "items": {
+          "$ref": "#/$defs/SourceV1"
+        },
+        "title": "Sources",
+        "type": "array"
+      }
+    },
+    "required": [
+      "sources"
+    ],
+    "title": "SourcesEventV1",
+    "type": "object"
+  },
+  "thinking": {
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": 1,
+        "default": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      },
+      "status": {
+        "enum": [
+          "started",
+          "analyzing",
+          "reasoning",
+          "completed"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "message"
+    ],
+    "title": "ThinkingEventV1",
+    "type": "object"
+  },
+  "token": {
+    "additionalProperties": false,
+    "properties": {
+      "content": {
+        "title": "Content",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": 1,
+        "default": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "content"
+    ],
+    "title": "TokenEventV1",
+    "type": "object"
+  }
+}
