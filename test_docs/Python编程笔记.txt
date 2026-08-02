@@ -1,0 +1,58 @@
+Python 编程常用笔记
+
+一、列表推导式
+列表推导式是 Python 中创建列表的简洁语法。
+基本格式：[表达式 for 变量 in 可迭代对象 if 条件]
+
+示例：
+- squares = [x**2 for x in range(10)]  # 生成 0-9 的平方
+- evens = [x for x in range(20) if x % 2 == 0]  # 生成 0-20 的偶数
+- words = [word.upper() for word in ["hello", "world"]]  # 转大写
+
+二、字典操作
+- 获取值：dict.get(key, default)  # key 不存在时返回 default
+- 合并字典：dict1 | dict2  # Python 3.9+ 语法
+- 字典推导式：{k: v for k, v in items if v > 0}
+
+三、异常处理
+try:
+    result = 10 / 0
+except ZeroDivisionError as e:
+    print(f"除零错误: {e}")
+except Exception as e:
+    print(f"其他错误: {e}")
+else:
+    print("没有异常时执行")
+finally:
+    print("总是执行")
+
+四、装饰器
+装饰器是一种设计模式，用于在不修改原函数代码的情况下扩展函数功能。
+
+def timer(func):
+    import time
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        print(f"耗时: {time.time() - start:.2f}秒")
+        return result
+    return wrapper
+
+@timer
+def slow_function():
+    import time
+    time.sleep(1)
+
+五、虚拟环境管理
+- conda create -n myenv python=3.11  # 创建环境
+- conda activate myenv  # 激活环境
+- pip install -r requirements.txt  # 安装依赖
+- pip freeze > requirements.txt  # 导出依赖
+
+六、常用内置函数
+- map(func, iterable)  # 对每个元素应用函数
+- filter(func, iterable)  # 过滤元素
+- zip(*iterables)  # 并行遍历多个可迭代对象
+- enumerate(iterable, start=0)  # 带索引遍历
+- any(iterable)  # 任意为 True
+- all(iterable)  # 全部为 True
