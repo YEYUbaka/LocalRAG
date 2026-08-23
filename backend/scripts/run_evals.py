@@ -14,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence
 
+from sqlalchemy.orm import Session
+
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = BACKEND_DIR.parent
@@ -26,6 +28,14 @@ from app.domain.tenant import TenantScope
 
 SearchFn = Callable[[TenantScope, str], list[dict[str, Any]]]
 QueryVariantsFn = Callable[[str], list[str]]
+SessionFactory = Callable[[], Session]
+
+EVAL_USERNAME = "__localrag_eval__"
+EVAL_KB_NAME = "__localrag_eval__"
+
+
+class CorpusIndexError(RuntimeError):
+    """Raised when the isolated evaluation corpus cannot be indexed safely."""
 
 
 @dataclass(frozen=True)
@@ -48,6 +58,145 @@ class EvalConfig:
             "web_search_enabled": False,
             "temperature": 0,
         }
+
+
+def ensure_eval_scope(session_factory: SessionFactory) -> TenantScope:
+    """Create or reuse the reserved local-only evaluation tenant and KB."""
+    from app.models import KnowledgeBase, User
+
+    db = session_factory()
+    try:
+        user = db.query(User).filter(User.username == EVAL_USERNAME).first()
+        if user is None:
+            user = User(
+                username=EVAL_USERNAME,
+                password_hash="evaluation-only-account-login-disabled",
+            )
+            db.add(user)
+            db.flush()
+
+        kb = (
+            db.query(KnowledgeBase)
+            .filter(
+                KnowledgeBase.user_id == user.id,
+                KnowledgeBase.name == EVAL_KB_NAME,
+            )
+            .first()
+        )
+        if kb is None:
+            kb = KnowledgeBase(
+                name=EVAL_KB_NAME,
+                description="LocalRAG deterministic retrieval evaluation corpus",
+                user_id=user.id,
+            )
+            db.add(kb)
+            db.flush()
+
+        scope = TenantScope(user_id=user.id, kb_id=kb.id)
+        db.commit()
+        return scope
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def discover_corpus(test_docs: Path) -> list[Path]:
+    """Return every top-level file supported by the production parser."""
+    from app.services.document_service import LOADER_MAP
+
+    if not test_docs.is_dir():
+        raise CorpusIndexError(f"评测语料目录不存在: {test_docs}")
+    corpus = sorted(
+        (
+            path
+            for path in test_docs.iterdir()
+            if path.is_file() and path.suffix.lower() in LOADER_MAP
+        ),
+        key=lambda path: (path.name.casefold(), path.name),
+    )
+    if not corpus:
+        raise CorpusIndexError(f"评测语料目录中没有生产解析器支持的文档: {test_docs}")
+    return corpus
+
+
+def ensure_corpus_indexed(
+    session_factory: SessionFactory,
+    scope: TenantScope,
+    corpus: list[Path],
+    process_fn: Callable[[int, SessionFactory], None],
+) -> dict[str, Any]:
+    """Idempotently index corpus files through ``process_document``."""
+    from app.models import Document
+    from app.services.document_service import compute_md5
+
+    indexed: list[str] = []
+    skipped: list[str] = []
+
+    for path in corpus:
+        checksum = compute_md5(path)
+        db = session_factory()
+        try:
+            document = db.query(Document).filter(Document.md5_hash == checksum).first()
+            if document is not None and (
+                document.user_id != scope.user_id or document.kb_id != scope.kb_id
+            ):
+                raise CorpusIndexError(
+                    "全局 MD5 唯一约束冲突："
+                    f"{path.name} 与其他租户文档 {document.filename} 内容相同；"
+                    "为避免修改用户数据，评测已停止"
+                )
+
+            if document is not None and document.status == "completed":
+                skipped.append(path.name)
+                continue
+
+            if document is None:
+                document = Document(
+                    kb_id=scope.kb_id,
+                    user_id=scope.user_id,
+                    filename=path.name,
+                    file_path=str(path.resolve()),
+                    file_size=path.stat().st_size,
+                    md5_hash=checksum,
+                    status="pending",
+                )
+                db.add(document)
+            else:
+                document.filename = path.name
+                document.file_path = str(path.resolve())
+                document.file_size = path.stat().st_size
+                document.status = "pending"
+                document.error_message = None
+            db.commit()
+            doc_id = document.id
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+        process_fn(doc_id, session_factory)
+
+        verify_db = session_factory()
+        try:
+            processed = verify_db.query(Document).filter(Document.id == doc_id).first()
+            if processed is None or processed.status != "completed":
+                status = processed.status if processed is not None else "missing"
+                reason = processed.error_message if processed is not None else "文档记录消失"
+                raise CorpusIndexError(
+                    f"评测文档 {path.name} 索引失败（status={status}）：{reason or '未知错误'}"
+                )
+        finally:
+            verify_db.close()
+        indexed.append(path.name)
+
+    return {
+        "corpus_count": len(corpus),
+        "indexed": indexed,
+        "skipped": skipped,
+    }
 
 
 def _filename(item: dict[str, Any]) -> str | None:
@@ -268,4 +417,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

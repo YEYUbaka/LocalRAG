@@ -2,13 +2,21 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.config import settings
 from app.domain.tenant import TenantScope
+from app.models import Base, Document
 from scripts.run_evals import (
+    CorpusIndexError,
     EvalConfig,
     aggregate_metrics,
     build_parser,
+    discover_corpus,
+    ensure_corpus_indexed,
+    ensure_eval_scope,
     evaluate_entries,
     stable_json_bytes,
     temporary_eval_settings,
@@ -281,3 +289,186 @@ def test_build_parser_supports_explicit_rewrite_and_legacy_no_rewrite(tmp_path):
 
     assert parser.parse_args([*common, "--enable-rewrite"]).enable_rewrite is True
     assert parser.parse_args([*common, "--no-rewrite"]).enable_rewrite is False
+
+
+@pytest.fixture
+def sqlite_session_factory():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    yield factory
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+def test_ensure_eval_scope_creates_and_reuses_fixed_user_and_kb(sqlite_session_factory):
+    first = ensure_eval_scope(sqlite_session_factory)
+    second = ensure_eval_scope(sqlite_session_factory)
+
+    assert first == second
+    assert first.user_id > 0
+    assert first.kb_id > 0
+
+    db = sqlite_session_factory()
+    try:
+        from app.models import KnowledgeBase, User
+
+        assert db.query(User).filter(User.username == "__localrag_eval__").count() == 1
+        assert db.query(KnowledgeBase).filter(KnowledgeBase.name == "__localrag_eval__").count() == 1
+    finally:
+        db.close()
+
+
+def test_discover_corpus_returns_all_supported_files_in_stable_order(tmp_path):
+    for name in ["z.txt", "A.md", "table.xlsx", "manual.docx", "ignore.exe"]:
+        (tmp_path / name).write_text(name, encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "hidden.md").write_text("nested", encoding="utf-8")
+
+    corpus = discover_corpus(tmp_path)
+
+    assert [path.name for path in corpus] == ["A.md", "manual.docx", "table.xlsx", "z.txt"]
+
+
+def test_discover_corpus_rejects_missing_or_empty_directory(tmp_path):
+    with pytest.raises(CorpusIndexError, match="语料目录不存在"):
+        discover_corpus(tmp_path / "missing")
+    (tmp_path / "only.exe").write_text("no", encoding="utf-8")
+    with pytest.raises(CorpusIndexError, match="没有生产解析器支持的文档"):
+        discover_corpus(tmp_path)
+
+
+def test_ensure_corpus_indexed_calls_production_processor_and_skips_same_md5(
+    tmp_path,
+    sqlite_session_factory,
+):
+    scope = ensure_eval_scope(sqlite_session_factory)
+    paths = []
+    for name in ["one.md", "two.txt"]:
+        path = tmp_path / name
+        path.write_text(f"content-{name}", encoding="utf-8")
+        paths.append(path)
+    calls = []
+
+    def fake_process(doc_id, session_factory):
+        calls.append(doc_id)
+        db = session_factory()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).one()
+            doc.status = "completed"
+            doc.chunk_count = 2
+            db.commit()
+        finally:
+            db.close()
+
+    first = ensure_corpus_indexed(sqlite_session_factory, scope, paths, fake_process)
+    second = ensure_corpus_indexed(sqlite_session_factory, scope, paths, fake_process)
+
+    assert first == {
+        "corpus_count": 2,
+        "indexed": ["one.md", "two.txt"],
+        "skipped": [],
+    }
+    assert second == {
+        "corpus_count": 2,
+        "indexed": [],
+        "skipped": ["one.md", "two.txt"],
+    }
+    assert len(calls) == 2
+    db = sqlite_session_factory()
+    try:
+        docs = db.query(Document).order_by(Document.filename).all()
+        assert [(doc.filename, doc.user_id, doc.kb_id) for doc in docs] == [
+            ("one.md", scope.user_id, scope.kb_id),
+            ("two.txt", scope.user_id, scope.kb_id),
+        ]
+    finally:
+        db.close()
+
+
+def test_ensure_corpus_indexed_retries_existing_failed_eval_document(
+    tmp_path,
+    sqlite_session_factory,
+):
+    scope = ensure_eval_scope(sqlite_session_factory)
+    path = tmp_path / "retry.md"
+    path.write_text("retry", encoding="utf-8")
+    from app.services.document_service import compute_md5
+
+    db = sqlite_session_factory()
+    try:
+        db.add(Document(
+            kb_id=scope.kb_id,
+            user_id=scope.user_id,
+            filename=path.name,
+            file_path=str(path),
+            file_size=path.stat().st_size,
+            md5_hash=compute_md5(path),
+            status="failed",
+            error_message="old failure",
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    def fake_process(doc_id, session_factory):
+        process_db = session_factory()
+        try:
+            doc = process_db.query(Document).filter(Document.id == doc_id).one()
+            doc.status = "completed"
+            doc.error_message = None
+            process_db.commit()
+        finally:
+            process_db.close()
+
+    stats = ensure_corpus_indexed(sqlite_session_factory, scope, [path], fake_process)
+
+    assert stats["indexed"] == ["retry.md"]
+
+
+def test_ensure_corpus_indexed_reports_processing_failure(tmp_path, sqlite_session_factory):
+    scope = ensure_eval_scope(sqlite_session_factory)
+    path = tmp_path / "broken.md"
+    path.write_text("broken", encoding="utf-8")
+
+    def fail_process(doc_id, session_factory):
+        db = session_factory()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).one()
+            doc.status = "failed"
+            doc.error_message = "parser failed"
+            db.commit()
+        finally:
+            db.close()
+
+    with pytest.raises(CorpusIndexError, match="broken.md.*parser failed"):
+        ensure_corpus_indexed(sqlite_session_factory, scope, [path], fail_process)
+
+
+def test_ensure_corpus_indexed_refuses_global_md5_collision(tmp_path, sqlite_session_factory):
+    scope = ensure_eval_scope(sqlite_session_factory)
+    path = tmp_path / "collision.md"
+    path.write_text("same bytes", encoding="utf-8")
+    from app.services.document_service import compute_md5
+
+    db = sqlite_session_factory()
+    try:
+        db.add(Document(
+            kb_id=999,
+            user_id=999,
+            filename="user-document.md",
+            file_path=str(path),
+            file_size=path.stat().st_size,
+            md5_hash=compute_md5(path),
+            status="completed",
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    with pytest.raises(CorpusIndexError, match="全局 MD5 唯一约束冲突.*user-document.md"):
+        ensure_corpus_indexed(sqlite_session_factory, scope, [path], lambda *_: None)
