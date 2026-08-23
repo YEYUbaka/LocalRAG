@@ -103,7 +103,7 @@ cd backend && conda run -n localrag python -m pytest tests/ -v
 - `frontend/src/components/` — React 组件（ChatPanel, DocumentList, DocumentPreviewPanel, SourcePanel, Sidebar, SettingsPanel）
 - `frontend/src/services/` — API 调用和 SSE 封装
 - `data/` — 本地数据（chromadb/, uploads/, models/）
-- `plans/` — 设计文档和实施计划
+- `docs/quality/` — 质量工程档案（基线清单、阶段验收报告、执行计划）
 
 ## Knowledge Base Documents (面试求职方向)
 
@@ -137,10 +137,10 @@ cd backend && conda run -n localrag python -m pytest tests/ -v
 - 质量加固设计: `docs/superpowers/specs/2026-06-13-quality-hardening-design.md`
 - 联网搜索与 Reranker 修复设计: `docs/superpowers/specs/2026-06-17-web-search-reranker-fix-design.md`
 - 稳定化设计: `docs/superpowers/specs/2026-06-19-stabilization-design.md`
-- 总体实施计划: `plans/localrag-implementation.md`
-- 文档预览设计: `plans/document-preview-design.md`
-- 文档预览实施: `plans/document-preview-implementation.md`
-- 下一步路线图: `plans/next-steps-roadmap.md`
-- RAG 相关性阈值修复: `plans/rag-relevance-threshold-fix.md`
-- 面试知识库计划: `plans/interview-knowledge-base-plan.md`
-- 稳定化实施计划: `plans/2026-06-19-stabilization-implementation.md`
+- 质量工程总体设计（Frozen，Phase 0–4 规划）: `docs/superpowers/specs/2026-08-02-localrag-quality-program-design.md`
+
+## Quality Program Records
+
+- Phase 0 干净基线清单: `docs/quality/baseline-manifest.md`
+- Phase 0 安全验收报告: `docs/quality/phase-0-acceptance.md`
+- Phase 1 执行手册: `docs/quality/phase-1-plan.md`

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-The FastAPI backend lives in `backend/app/`: routes are under `api/`, retrieval primitives under `core/`, workflows under `services/`, and SQLAlchemy models in `models.py`. Tests are in `backend/tests/`; diagnostics belong in `backend/scripts/`. The React/TypeScript client is under `frontend/src/`, with UI in `components/`, API/SSE clients in `services/`, and shared types in `types/`. Keep samples in `test_docs/`, runtime data in `data/`, design notes in `docs/`, and implementation plans in `plans/`.
+The FastAPI backend lives in `backend/app/`: routes are under `api/`, retrieval primitives under `core/`, workflows under `services/`, and SQLAlchemy models in `models.py`. Tests are in `backend/tests/`; diagnostics belong in `backend/scripts/`. The React/TypeScript client is under `frontend/src/`, with UI in `components/`, API/SSE clients in `services/`, and shared types in `types/`. Keep samples in `test_docs/`, runtime data in `data/`, and design notes plus quality-program records in `docs/`.
 
 ## Build, Test, and Development Commands
 
