@@ -296,8 +296,8 @@ A：`.pytest_cache` 写入失败的 PytestCacheWarning 可忽略，不影响结�
 | 任务 | Owner | 状态 | PR / 备注 |
 | --- | --- | --- | --- |
 | P1-00 启动清理 | QA/Infra | 🔄 引用清理与 CLAUDE.md 退役完成（e030026）；tag 名对齐待办 |
-| P1-01 Golden Set v1 | RAG + 全员 | ⬜ 未开始 | 可多人并行 |
-| P1-02 评测 CLI | RAG | ⬜ 未开始 | 依赖 P1-01 首批 40 条即可开工 |
+| P1-01 Golden Set v1 | RAG + 全员 | 🔄 机器草稿待人工复核 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9) 已起草 56 条、覆盖 17 篇 interview Markdown 与四类非 OCR 题型；尚未生成正式 v1 |
+| P1-02 评测 CLI | RAG | 🔄 PR #9 待评审 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9)；临时 fixture 两次运行 summary 逐字节一致，真实 21 文档基线尚未执行 |
 | P1-03 域契约冻结 | Contract | ⬜ 未开始 | 与 P1-01 并行 |
 | P1-04 统一融合重构 | RAG | ⬜ 未开始 | 依赖 P1-02 基线 |
 | P1-05 Chunk 稳定 ID | Ingestion+RAG | ⬜ 未开始 | 依赖 P1-03 |
