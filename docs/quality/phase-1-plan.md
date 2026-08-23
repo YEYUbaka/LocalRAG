@@ -124,9 +124,9 @@ Owner 是**角色**而非具体人。认领方式：在本文件对应的 GitHub
 
 ### P1-01 Golden Set v1 标注（3–4 天，可多人并行）— RAG Owner + 所有协作者
 
-**产出物**：`backend/evals/golden_set/v1.jsonl`（120 行）+ `backend/evals/golden_set/SCHEMA.md`
+**产出物**：`backend/evals/golden_set/v1.jsonl`（120 行）+ `backend/evals/golden_set/SCHEMA.md` + `backend/evals/golden_set/REVIEW-STATUS.md`
 
-**语料**：`test_docs/` 下全部 19 个文档：17 篇 `interview-*.md` + `机器学习基础.pdf` + `Git命令手册.docx`。PDF/docx 用于覆盖非 Markdown 解析路径。
+**语料**：`test_docs/` 下全部 24 个文档：17 篇 `interview-*.md`、`RAG技术入门.md`、`Python编程笔记.txt`、`机器学习基础.pdf`、`Git命令手册.docx`，以及生成脚本产出的 `HTTP状态码速查表.docx`、`Git常用命令对照表.xlsx`、`Linux文本处理三剑客.csv`。生成脚本为 `backend/scripts/gen_table_corpus.py`，可重复、幂等且不引入新依赖。
 
 **配额（严格按上游设计 §8，不得自行调整）**：
 
@@ -135,7 +135,7 @@ Owner 是**角色**而非具体人。认领方式：在本文件对应的 GitHub
 | factoid | 55 | 单一文档内有明确依据的事实题 |
 | multi_span | 15 | 答案需要拼合同一文档多处或多个文档 |
 | exact_term | 15 | 考精确术语/命令/参数名（考察 BM25 与精确匹配） |
-| ocr_table | 15 | 依据 PDF/docx 中的表格、图片或扫描内容 |
+| ocr_table | 15 | 依据 DOCX/XLSX/CSV/PDF 原生数字表格；扫描件与图片 OCR 样本延后到 Phase 2 |
 | unanswerable | 20 | 库内无依据，正确行为是拒答/转联网 |
 
 **JSONL 行格式**（一行一个 JSON 对象，UTF-8）：
@@ -167,7 +167,7 @@ Owner 是**角色**而非具体人。认领方式：在本文件对应的 GitHub
 3. 提交前跑校验脚本（P1-02 附带 `validate_golden.py`，或先用 `python -c "import json;[json.loads(l) for l in open(...)]"` 兜底）；
 4. 两人交叉抽查 10%：重点核对 locator 是否能在原文找到、unanswerable 是否真的无依据。
 
-**分工参考**：每人领一种题型的一个文档子集；ocr_table 题型集中由熟悉 PDF/docx 的 1–2 人完成。
+**分工参考**：每人领一种题型的一个文档子集；ocr_table 题型集中由熟悉 DOCX/XLSX/CSV/PDF 原生表格的 1–2 人完成。若原生表格在现有生产解析链路中无法检索命中，先诊断解析问题或数据问题并如实记录，不得为了提高指标修改题目。
 
 ### P1-02 评测 CLI 与基线快照（2–3 天）— RAG Owner
 
@@ -297,7 +297,7 @@ A：`.pytest_cache` 写入失败的 PytestCacheWarning 可忽略，不影响结�
 | --- | --- | --- | --- |
 | P1-00 启动清理 | QA/Infra | 🔄 引用清理与 CLAUDE.md 退役完成（e030026）；tag 名对齐待办 |
 | P1-01 Golden Set v1 | RAG + 全员 | 🔄 机器草稿待人工复核 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9) 已起草 56 条、覆盖 17 篇 interview Markdown 与四类非 OCR 题型；尚未生成正式 v1 |
-| P1-02 评测 CLI | RAG | 🔄 PR #9 待评审 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9)；临时 fixture 两次运行 summary 逐字节一致，真实 21 文档基线尚未执行 |
+| P1-02 评测 CLI | RAG | ✅ 已合入 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9)；临时 fixture 两次运行 summary 逐字节一致，真实 24 文档基线尚未执行 |
 | P1-03 域契约冻结 | Contract | ⬜ 未开始 | 与 P1-01 并行 |
 | P1-04 统一融合重构 | RAG | ⬜ 未开始 | 依赖 P1-02 基线 |
 | P1-05 Chunk 稳定 ID | Ingestion+RAG | ⬜ 未开始 | 依赖 P1-03 |

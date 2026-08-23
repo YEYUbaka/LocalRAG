@@ -89,7 +89,7 @@ frontend/src/
   services/     # API 调用与 SSE 封装
   types/        # 共享类型定义
 data/             # 本地数据（chromadb/, uploads/, models/）— 不入库
-test_docs/        # 示例与评测语料（17 篇面试 md + PDF/docx 各一）
+test_docs/        # 24 份示例与评测语料（Markdown/TXT/PDF/DOCX/XLSX/CSV）
 docs/
   superpowers/specs/  # 设计文档（含 Frozen 的 2026-08-02 质量工程总体设计）
   quality/            # 质量工程档案（基线清单、验收报告、Phase 执行手册）
@@ -171,4 +171,4 @@ docker compose up --build
 
 ## 评测语料（test_docs/）
 
-`test_docs/` 是 Golden Set 标注的种子语料：17 篇面试知识库 md（约 132KB、200+ 题，主题覆盖测试开发/网络/数据库/Python/AI 等）+ `机器学习基础.pdf` + `Git命令手册.docx`（覆盖非 Markdown 解析路径）。文件清单直接查看目录即可；标注规范见 [Phase 1 执行手册](docs/quality/phase-1-plan.md) P1-01。
+`test_docs/` 是 Golden Set 标注的 24 份受控种子语料：17 篇面试知识库 Markdown（约 132KB、200+ 题，主题覆盖测试开发/网络/数据库/Python/AI 等）、`RAG技术入门.md`、`Python编程笔记.txt`、`机器学习基础.pdf`、`Git命令手册.docx`，以及由 `backend/scripts/gen_table_corpus.py` 幂等生成的 `HTTP状态码速查表.docx`、`Git常用命令对照表.xlsx`、`Linux文本处理三剑客.csv`。标注规范见 [Phase 1 执行手册](docs/quality/phase-1-plan.md) P1-01。
