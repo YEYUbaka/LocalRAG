@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from sqlalchemy.orm import Session
 
-from app.core.vectorstore import hybrid_search
+from app.core.vectorstore import hybrid_search, unified_search
 from app.core.prompts import build_rag_prompt
 from app.services.llm_service import get_chat_model, get_thinking_model
 from app.services.web_search_service import web_search
@@ -125,7 +125,15 @@ async def _retrieve_sources(
     """公共检索逻辑：查询改写 + 混合搜索 + 联网回退。"""
     if scope is None:
         return []
-    if settings.query_rewrite_enabled:
+    if settings.unified_fusion_enabled:
+        if settings.query_rewrite_enabled:
+            from app.services.query_rewrite import rewrite_query
+
+            queries = await rewrite_query(question)
+        else:
+            queries = [question]
+        sources = unified_search(scope, question, queries)
+    elif settings.query_rewrite_enabled:
         from app.services.query_rewrite import rewrite_query
         queries = await rewrite_query(question)
 
@@ -269,7 +277,10 @@ async def rag_query_with_image(
         # 如果有知识库上下文，先检索相关内容
         sources = []
         if scope is not None:
-            sources = hybrid_search(scope, question)
+            if settings.unified_fusion_enabled:
+                sources = unified_search(scope, question, [question])
+            else:
+                sources = hybrid_search(scope, question)
 
         # 添加知识库上下文到问题中
         if sources:

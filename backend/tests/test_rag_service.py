@@ -6,11 +6,13 @@ from unittest.mock import MagicMock, patch
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from app.services.rag_service import (
+    _retrieve_sources,
     estimate_tokens,
     build_messages,
     get_conversation_history,
     MAX_HISTORY_ROUNDS,
 )
+from app.domain.tenant import TenantScope
 
 
 # ---------------------------------------------------------------------------
@@ -252,3 +254,37 @@ class TestGetConversationHistory:
 class TestConstants:
     def test_max_history_rounds_default(self):
         assert MAX_HISTORY_ROUNDS == 5
+
+
+@pytest.mark.asyncio
+async def test_retrieve_sources_dispatches_all_queries_to_unified_search_once(monkeypatch):
+    unified_calls = []
+
+    async def rewrite(question):
+        return [question, "改写问题"]
+
+    monkeypatch.setattr("app.services.query_rewrite.rewrite_query", rewrite)
+    monkeypatch.setattr("app.services.rag_service.settings.query_rewrite_enabled", True)
+    monkeypatch.setattr("app.services.rag_service.settings.unified_fusion_enabled", True, raising=False)
+    monkeypatch.setattr(
+        "app.services.rag_service.unified_search",
+        lambda scope, original, queries: unified_calls.append((scope, original, queries)) or [],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.services.rag_service.hybrid_search",
+        lambda *args: pytest.fail("flag-on 不应逐查询调用 legacy hybrid_search"),
+    )
+    monkeypatch.setattr(
+        "app.services.rag_service._try_web_search",
+        lambda question, sources, kb_id: _async_value(sources),
+    )
+    scope = TenantScope(7, 11)
+
+    await _retrieve_sources("原问题", scope)
+
+    assert unified_calls == [(scope, "原问题", ["原问题", "改写问题"])]
+
+
+async def _async_value(value):
+    return value

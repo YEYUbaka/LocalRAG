@@ -4,6 +4,7 @@ import logging
 import os
 from rank_bm25 import BM25Okapi
 
+from app.config import settings
 from app.domain.tenant import TenantScope
 
 # 静默 jieba 的字典加载输出
@@ -131,13 +132,33 @@ def rebuild_from_db(db_session_factory) -> None:
         docs = db.query(Document).filter(Document.status == "completed").all()
         for doc in docs:
             if doc.parsed_content:
-                from app.services.document_service import split_documents, parse_document
+                from app.services.document_service import (
+                    CHUNKER_VERSION,
+                    build_stable_chunk_metadata,
+                    parse_document,
+                    split_documents,
+                )
                 from pathlib import Path
                 try:
                     file_path = Path(doc.file_path)
                     if file_path.exists():
                         raw_docs = parse_document(file_path)
                         texts, metadatas = split_documents(raw_docs, doc.filename)
+                        if settings.unified_fusion_enabled:
+                            document_key = doc.document_key or doc.md5_hash
+                            if not document_key:
+                                import hashlib
+
+                                document_key = hashlib.sha256(
+                                    (doc.parsed_content or "").encode("utf-8")
+                                ).hexdigest()
+                            metadatas = build_stable_chunk_metadata(
+                                document_key,
+                                doc.document_version or 1,
+                                texts,
+                                metadatas,
+                                doc.chunker_version or CHUNKER_VERSION,
+                            )
                         scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
                         add_document_chunks(scope, doc.id, texts, metadatas=metadatas)
                 except Exception as e:
