@@ -35,4 +35,10 @@
 - 密钥仅存于本地 `.env`（不入库，CI 内置密钥扫描 job）；
 - 原始文档与向量索引留在本地，云端 LLM 仅接收脱敏后的检索片段。
 
+## 已知上游依赖漏洞（跟踪中）
+
+- **GHSA-f4j7-r4q5-qw2c**（critical）：chromadb 鉴权前代码注入，影响 1.0.0 – 1.5.9，截至 2026-08-23 上游尚未发布修复版本。
+  - **暴露面分析**：该漏洞位于 chromadb 的 HTTP 服务端请求处理路径。LocalRAG 仅以**嵌入式模式**使用 chromadb（`app/core/vectorstore.py` 中的 `PersistentClient`，进程内运行、无任何网络监听），源码部署与 docker-compose 均不启动 chroma server，因此默认配置下攻击面不存在。
+  - **处置约定**：上游发布修复版后立即升级并解除本记录；在此之前，任何贡献者都**不得**引入以 server 模式运行 chromadb 或对外暴露其端口的改动。
+
 感谢你负责任地披露，你的贡献会让所有 LocalRAG 用户更安全。
