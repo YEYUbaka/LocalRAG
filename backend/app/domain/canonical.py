@@ -25,7 +25,7 @@ class CanonicalBlock:
     char_start: int | None
     char_end: int | None
     bbox: tuple[float, float, float, float] | None = None
-    table_cells: list[list[str]] | None = None
+    table_cells: tuple[tuple[str, ...], ...] | None = None
     image_caption: str | None = None
     ocr_confidence: float | None = None
     page_size: tuple[float, float] | None = None
@@ -38,6 +38,12 @@ class CanonicalBlock:
         if self.page_index is not None and self.page_index < 0:
             raise ValueError("page_index must be non-negative")
         _validate_optional_span(self.char_start, self.char_end)
+        if self.table_cells is not None:
+            object.__setattr__(
+                self,
+                "table_cells",
+                tuple(tuple(cell) for cell in self.table_cells),
+            )
         if self.bbox is not None:
             if len(self.bbox) != 4 or not all(isfinite(value) for value in self.bbox):
                 raise ValueError("bbox must contain four finite coordinates")

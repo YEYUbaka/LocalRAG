@@ -65,6 +65,18 @@ def test_canonical_document_preserves_ordered_unique_immutable_blocks():
         )
 
 
+def test_canonical_block_normalizes_table_cells_to_an_immutable_snapshot():
+    cells = [["状态码", "含义"], ["200", "成功"]]
+    block = make_block(table_cells=cells)
+
+    cells[1].append("later mutation")
+    assert block.table_cells == (("状态码", "含义"), ("200", "成功"))
+    with pytest.raises(AttributeError):
+        block.table_cells.append(("404", "未找到"))
+    with pytest.raises(FrozenInstanceError):
+        block.table_cells = ()
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -75,6 +87,8 @@ def test_canonical_document_preserves_ordered_unique_immutable_blocks():
         ({"char_start": None, "char_end": 6}, "character span"),
         ({"ocr_confidence": 1.1}, "ocr_confidence"),
         ({"ocr_confidence": inf}, "ocr_confidence"),
+        ({"bbox": (0.0, 0.0, inf, 1.0)}, "bbox"),
+        ({"page_size": (inf, 100.0)}, "page_size"),
     ],
 )
 def test_canonical_block_rejects_invalid_identity_or_provenance(overrides, message):
@@ -90,20 +104,19 @@ def make_provenance(**overrides):
         "page_indexes": (0,),
         "char_start": 0,
         "char_end": 6,
+        "parent_id": "parent-000001",
     }
     values.update(overrides)
     return ChunkProvenance(**values)
 
 
-def test_chunk_contracts_hold_stable_identity_and_finite_scores():
+def test_chunk_record_keeps_complete_immutable_provenance_and_finite_scores():
     provenance = make_provenance()
     record = ChunkRecord(
         chunk_id="document-key-v1-c1-000000",
-        parent_id="parent-000001",
-        block_ids=("block-000001",),
         text="可检索的文本",
         ordinal=0,
-        page_index=0,
+        provenance=provenance,
     )
     candidate = SearchCandidate(
         chunk_id=record.chunk_id,
@@ -114,9 +127,17 @@ def test_chunk_contracts_hold_stable_identity_and_finite_scores():
         provenance=provenance,
     )
 
-    assert candidate.provenance.document_version == 1
+    assert record.provenance == provenance
+    assert record.provenance.parent_id == "parent-000001"
+    assert record.provenance.block_ids == ("block-000001",)
+    assert record.provenance.page_indexes == (0,)
+    assert (record.provenance.char_start, record.provenance.char_end) == (0, 6)
     with pytest.raises(FrozenInstanceError):
         record.ordinal = 1
+    with pytest.raises(FrozenInstanceError):
+        provenance.parent_id = "changed"
+    with pytest.raises(FrozenInstanceError):
+        candidate.fusion_score = 0.1
     with pytest.raises(ValueError, match="finite"):
         SearchCandidate(
             chunk_id=record.chunk_id,
@@ -135,11 +156,9 @@ def test_chunk_contracts_hold_stable_identity_and_finite_scores():
             ChunkRecord,
             {
                 "chunk_id": "",
-                "parent_id": None,
-                "block_ids": ("block-000001",),
                 "text": "text",
                 "ordinal": 0,
-                "page_index": None,
+                "provenance": make_provenance(),
             },
             "chunk_id",
         ),
@@ -147,25 +166,21 @@ def test_chunk_contracts_hold_stable_identity_and_finite_scores():
             ChunkRecord,
             {
                 "chunk_id": "chunk",
-                "parent_id": None,
-                "block_ids": (),
                 "text": "text",
-                "ordinal": 0,
-                "page_index": None,
+                "ordinal": -1,
+                "provenance": make_provenance(),
             },
-            "block_ids",
+            "ordinal",
         ),
         (
             ChunkRecord,
             {
                 "chunk_id": "chunk",
-                "parent_id": None,
-                "block_ids": ("block-000001",),
                 "text": "text",
-                "ordinal": -1,
-                "page_index": None,
+                "ordinal": 0,
+                "provenance": "not-a-provenance",
             },
-            "ordinal",
+            "provenance",
         ),
         (
             ChunkProvenance,
@@ -202,6 +217,18 @@ def test_chunk_contracts_hold_stable_identity_and_finite_scores():
                 "char_end": 1,
             },
             "page_indexes",
+        ),
+        (
+            ChunkProvenance,
+            {
+                "document_key": "document",
+                "document_version": 1,
+                "block_ids": ("block-000001",),
+                "page_indexes": (0,),
+                "char_start": None,
+                "char_end": 1,
+            },
+            "character span",
         ),
     ],
 )
