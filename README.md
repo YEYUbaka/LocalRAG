@@ -93,7 +93,7 @@ npm install
 npm run dev
 ```
 
-访问 http://localhost:5173（或使用默认账号登录系统）。
+访问 http://localhost:5173 。首次使用请在登录页切换到「去注册」创建账号（仅数据库为空时可注册第一个账号；如需多账号需手动向 users 表插入或重置数据库）。
 
 ### Docker 部署（全栈）
 
