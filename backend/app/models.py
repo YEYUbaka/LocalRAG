@@ -59,7 +59,10 @@ class Document(Base):
     filename = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
     file_size = Column(Integer, nullable=False)
-    md5_hash = Column(String(32), nullable=False, unique=True)
+    md5_hash = Column(String(32), nullable=False)
+    document_key = Column(String(64), nullable=True)
+    document_version = Column(Integer, nullable=False, default=1)
+    chunker_version = Column(String(32), nullable=False, default="1")
     status = Column(
         SAEnum("pending", "processing", "completed", "failed", name="doc_status"),
         default="pending",
@@ -73,6 +76,10 @@ class Document(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tags = relationship("DocumentTag", back_populates="document", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "kb_id", "md5_hash", name="uq_documents_scope_md5"),
+    )
 
 
 class Conversation(Base):

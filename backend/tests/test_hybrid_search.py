@@ -148,6 +148,21 @@ class TestBm25Search:
         assert "id" in top
         assert top["bm25_score"] > 0
 
+    def test_bm25_uses_canonical_chunk_id_from_metadata(self):
+        expected_id = "abc123-v1-c1-000000"
+        add_document_chunks(
+            SCOPE1,
+            document_id=1,
+            chunks=["稳定标识符只属于这个段落"],
+            metadatas=[{"chunk_id": expected_id}],
+        )
+        add_document_chunks(SCOPE1, document_id=2, chunks=["无关的数据库内容"])
+        add_document_chunks(SCOPE1, document_id=3, chunks=["无关的网络协议内容"])
+
+        results = bm25_search(SCOPE1, "稳定标识符", top_k=5)
+
+        assert results[0]["id"] == expected_id
+
     def test_bm25_remove_document(self):
         """After removing a document, its chunks no longer appear in search results."""
         # Need >= 3 docs so BM25 IDF is non-zero

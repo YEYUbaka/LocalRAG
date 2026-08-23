@@ -322,7 +322,9 @@ def test_ensure_eval_scope_creates_and_reuses_fixed_user_and_kb(sqlite_session_f
     try:
         from app.models import KnowledgeBase, User
 
-        assert db.query(User).count() == 0
+        eval_user = db.query(User).filter(User.id == 2_147_483_647).one()
+        assert eval_user.username == "__localrag_eval_disabled__"
+        assert eval_user.password_hash.startswith("$2")
         eval_kb = db.query(KnowledgeBase).filter(KnowledgeBase.name == "__localrag_eval__").one()
         assert eval_kb.user_id == 2_147_483_647
     finally:
@@ -455,7 +457,7 @@ def test_ensure_corpus_indexed_reports_processing_failure(tmp_path, sqlite_sessi
         ensure_corpus_indexed(sqlite_session_factory, scope, [path], fail_process)
 
 
-def test_ensure_corpus_indexed_refuses_global_md5_collision(tmp_path, sqlite_session_factory):
+def test_ensure_corpus_indexed_allows_same_md5_in_another_tenant(tmp_path, sqlite_session_factory):
     scope = ensure_eval_scope(sqlite_session_factory)
     path = tmp_path / "collision.md"
     path.write_text("same bytes", encoding="utf-8")
@@ -476,8 +478,34 @@ def test_ensure_corpus_indexed_refuses_global_md5_collision(tmp_path, sqlite_ses
     finally:
         db.close()
 
-    with pytest.raises(CorpusIndexError, match="全局 MD5 唯一约束冲突.*user-document.md"):
-        ensure_corpus_indexed(sqlite_session_factory, scope, [path], lambda *_: None)
+    def complete_process(doc_id, session_factory):
+        process_db = session_factory()
+        try:
+            document = process_db.query(Document).filter(Document.id == doc_id).one()
+            document.status = "completed"
+            process_db.commit()
+        finally:
+            process_db.close()
+
+    stats = ensure_corpus_indexed(
+        sqlite_session_factory,
+        scope,
+        [path],
+        complete_process,
+    )
+
+    assert stats["indexed"] == ["collision.md"]
+    verify_db = sqlite_session_factory()
+    try:
+        matching = verify_db.query(Document).filter(
+            Document.md5_hash == compute_md5(path)
+        ).all()
+        assert {(document.user_id, document.kb_id) for document in matching} == {
+            (999, 999),
+            (scope.user_id, scope.kb_id),
+        }
+    finally:
+        verify_db.close()
 
 
 def test_prune_stale_eval_documents_removes_only_eval_runtime_indexes(

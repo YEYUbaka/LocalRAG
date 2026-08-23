@@ -35,12 +35,15 @@ def _scope_filter(scope: TenantScope) -> dict:
 def add_documents(scope: TenantScope, document_id: int, texts: list[str], metadatas: list[dict]) -> None:
     collection = get_collection()
     embeddings = embed_texts(texts)
-    ids = [f"doc_{document_id}_chunk_{i}" for i in range(len(texts))]
+    ids = [
+        metadata.get("chunk_id", f"doc_{document_id}_chunk_{i}")
+        for i, metadata in enumerate(metadatas)
+    ]
     metadata_with_doc = [
         {**m, "owner_id": scope.user_id, "kb_id": scope.kb_id, "doc_id": document_id}
         for m in metadatas
     ]
-    collection.add(
+    collection.upsert(
         ids=ids,
         embeddings=embeddings,
         documents=texts,

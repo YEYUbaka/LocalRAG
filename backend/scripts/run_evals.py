@@ -10,6 +10,7 @@ import json
 import math
 import platform
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -85,10 +86,21 @@ class EvalConfig:
 
 def ensure_eval_scope(session_factory: SessionFactory) -> TenantScope:
     """Create or reuse the reserved local-only evaluation tenant and KB."""
-    from app.models import KnowledgeBase
+    from app.auth import hash_password
+    from app.models import KnowledgeBase, User
 
     db = session_factory()
     try:
+        eval_user = db.query(User).filter(User.id == EVAL_USER_ID).first()
+        if eval_user is None:
+            eval_user = User(
+                id=EVAL_USER_ID,
+                username="__localrag_eval_disabled__",
+                password_hash=hash_password(secrets.token_urlsafe(64)),
+            )
+            db.add(eval_user)
+            db.flush()
+
         kb = (
             db.query(KnowledgeBase)
             .filter(
@@ -197,15 +209,11 @@ def ensure_corpus_indexed(
         checksum = compute_md5(path)
         db = session_factory()
         try:
-            document = db.query(Document).filter(Document.md5_hash == checksum).first()
-            if document is not None and (
-                document.user_id != scope.user_id or document.kb_id != scope.kb_id
-            ):
-                raise CorpusIndexError(
-                    "全局 MD5 唯一约束冲突："
-                    f"{path.name} 与其他租户文档 {document.filename} 内容相同；"
-                    "为避免修改用户数据，评测已停止"
-                )
+            document = db.query(Document).filter(
+                Document.md5_hash == checksum,
+                Document.user_id == scope.user_id,
+                Document.kb_id == scope.kb_id,
+            ).first()
 
             if document is not None and document.status == "completed":
                 skipped.append(path.name)
@@ -219,6 +227,9 @@ def ensure_corpus_indexed(
                     file_path=str(path.resolve()),
                     file_size=path.stat().st_size,
                     md5_hash=checksum,
+                    document_key=checksum,
+                    document_version=1,
+                    chunker_version="1",
                     status="pending",
                 )
                 db.add(document)

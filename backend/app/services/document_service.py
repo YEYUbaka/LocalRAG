@@ -4,10 +4,12 @@ from pathlib import Path
 
 from langchain_community.document_loaders import (
     PyPDFLoader, Docx2txtLoader, TextLoader,
-    UnstructuredExcelLoader, UnstructuredPowerPointLoader,
+    UnstructuredPowerPointLoader,
     BSHTMLLoader, CSVLoader,
 )
+from langchain_core.documents import Document as LangChainDocument
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -17,6 +19,34 @@ from app.domain.tenant import TenantScope
 
 logger = logging.getLogger(__name__)
 
+CHUNKER_VERSION = "1"
+
+
+class OpenpyxlExcelLoader:
+    """Load native XLSX tables with the project's existing openpyxl dependency."""
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+
+    def load(self) -> list[LangChainDocument]:
+        workbook = load_workbook(self.file_path, read_only=True, data_only=True)
+        try:
+            documents = []
+            for worksheet in workbook.worksheets:
+                rows = []
+                for values in worksheet.iter_rows(values_only=True):
+                    if not any(value is not None for value in values):
+                        continue
+                    rows.append("\t".join("" if value is None else str(value) for value in values))
+                if rows:
+                    documents.append(LangChainDocument(
+                        page_content="\n".join(rows),
+                        metadata={"source": self.file_path, "sheet": worksheet.title},
+                    ))
+            return documents
+        finally:
+            workbook.close()
+
 
 LOADER_MAP = {
     ".pdf": PyPDFLoader,
@@ -24,7 +54,7 @@ LOADER_MAP = {
     ".doc": Docx2txtLoader,
     ".md": TextLoader,
     ".txt": TextLoader,
-    ".xlsx": UnstructuredExcelLoader,
+    ".xlsx": OpenpyxlExcelLoader,
     ".pptx": UnstructuredPowerPointLoader,
     ".html": BSHTMLLoader,
     ".htm": BSHTMLLoader,
@@ -47,7 +77,7 @@ def parse_document(file_path: Path) -> list:
         raise ValueError(f"不支持的文件格式: {suffix}")
 
     kwargs = {}
-    if suffix in (".md", ".txt"):
+    if suffix in (".md", ".txt", ".csv"):
         kwargs["encoding"] = "utf-8"
 
     loader = loader_cls(str(file_path), **kwargs)
@@ -66,6 +96,42 @@ def split_documents(docs: list, filename: str) -> tuple[list[str], list[dict]]:
         meta = {**chunk.metadata, "filename": filename}
         metadatas.append(meta)
     return texts, metadatas
+
+
+def build_stable_chunk_metadata(
+    document_key: str,
+    document_version: int,
+    texts: list[str],
+    metadatas: list[dict],
+    chunker_version: str = CHUNKER_VERSION,
+) -> list[dict]:
+    """Attach deterministic cross-index identity to chunks in reading order."""
+    enriched = []
+    for ordinal, (text, metadata) in enumerate(zip(texts, metadatas, strict=True)):
+        chunk_id = (
+            f"{document_key}-v{document_version}-c{chunker_version}-{ordinal:06d}"
+        )
+        enriched.append({
+            **metadata,
+            "chunk_id": chunk_id,
+            "document_key": document_key,
+            "document_version": document_version,
+            "chunker_version": chunker_version,
+            "content_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        })
+    return enriched
+
+
+def _stable_identity(doc: Document, content: str | None = None) -> tuple[str, int, str]:
+    document_key = doc.document_key
+    if not document_key:
+        document_key = doc.md5_hash or hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+        doc.document_key = document_key
+    return (
+        document_key,
+        doc.document_version or 1,
+        doc.chunker_version or CHUNKER_VERSION,
+    )
 
 
 def compute_page_breaks(raw_docs: list) -> list[int] | None:
@@ -104,6 +170,10 @@ def process_document(doc_id: int, db_session_factory) -> None:
         doc.page_breaks = compute_page_breaks(raw_docs)
 
         texts, metadatas = split_documents(raw_docs, doc.filename)
+        document_key, document_version, chunker_version = _stable_identity(doc, doc.parsed_content)
+        metadatas = build_stable_chunk_metadata(
+            document_key, document_version, texts, metadatas, chunker_version,
+        )
         doc.chunk_count = len(texts)
 
         scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
@@ -144,6 +214,10 @@ async def process_url_import(doc_id: int, url: str):
 
         lc_doc = await fetch_single_url(url)
         texts, metadatas = split_documents([lc_doc], doc.filename)
+        document_key, document_version, chunker_version = _stable_identity(doc, lc_doc.page_content)
+        metadatas = build_stable_chunk_metadata(
+            document_key, document_version, texts, metadatas, chunker_version,
+        )
         scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
         add_documents(scope, doc_id, texts, metadatas)
         add_document_chunks(scope, doc_id, texts, metadatas)
@@ -186,6 +260,10 @@ async def process_crawl_import(doc_id: int, start_url: str, max_pages: int, max_
 
         all_text = "\n\n---\n\n".join(d.page_content for d in lc_docs)
         texts, metadatas = split_documents(lc_docs, doc.filename)
+        document_key, document_version, chunker_version = _stable_identity(doc, all_text)
+        metadatas = build_stable_chunk_metadata(
+            document_key, document_version, texts, metadatas, chunker_version,
+        )
         scope = TenantScope(user_id=doc.user_id or 1, kb_id=doc.kb_id or 1)
         add_documents(scope, doc_id, texts, metadatas)
         add_document_chunks(scope, doc_id, texts, metadatas)

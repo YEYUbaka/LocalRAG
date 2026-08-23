@@ -99,9 +99,13 @@ async def upload_document(
     with open(file_path, "wb") as f:
         f.write(content)
 
-    # 4. Check for duplicates (per user)
+    # 4. Check for duplicates within the tenant scope (owner + knowledge base)
     md5 = compute_md5(file_path)
-    existing = db.query(Document).filter(Document.md5_hash == md5, Document.user_id == user.id).first()
+    existing = db.query(Document).filter(
+        Document.md5_hash == md5,
+        Document.user_id == user.id,
+        Document.kb_id == kb_id,
+    ).first()
     if existing:
         file_path.unlink()
         raise HTTPException(status_code=409, detail=f"文档已存在: {existing.filename}")
@@ -114,6 +118,9 @@ async def upload_document(
         file_path=str(file_path),
         file_size=len(content),
         md5_hash=md5,
+        document_key=md5,
+        document_version=1,
+        chunker_version="1",
         status="pending",
     )
     db.add(doc)
