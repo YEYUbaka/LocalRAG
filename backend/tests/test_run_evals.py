@@ -24,6 +24,7 @@ from scripts.run_evals import (
     temporary_eval_settings,
     run_evaluation,
     main,
+    prune_stale_eval_documents,
     write_run_artifacts,
 )
 
@@ -320,9 +321,12 @@ def test_ensure_eval_scope_creates_and_reuses_fixed_user_and_kb(sqlite_session_f
     db = sqlite_session_factory()
     try:
         from app.models import KnowledgeBase, User
+        from app.auth import pwd_context
 
         assert db.query(User).filter(User.username == "__localrag_eval__").count() == 1
         assert db.query(KnowledgeBase).filter(KnowledgeBase.name == "__localrag_eval__").count() == 1
+        eval_user = db.query(User).filter(User.username == "__localrag_eval__").one()
+        assert pwd_context.identify(eval_user.password_hash) == "bcrypt"
     finally:
         db.close()
 
@@ -478,6 +482,71 @@ def test_ensure_corpus_indexed_refuses_global_md5_collision(tmp_path, sqlite_ses
         ensure_corpus_indexed(sqlite_session_factory, scope, [path], lambda *_: None)
 
 
+def test_prune_stale_eval_documents_removes_only_eval_runtime_indexes(
+    tmp_path,
+    sqlite_session_factory,
+):
+    scope = ensure_eval_scope(sqlite_session_factory)
+    current = tmp_path / "current.md"
+    current.write_text("current", encoding="utf-8")
+    from app.services.document_service import compute_md5
+
+    db = sqlite_session_factory()
+    try:
+        current_doc = Document(
+            kb_id=scope.kb_id,
+            user_id=scope.user_id,
+            filename="current.md",
+            file_path=str(current),
+            file_size=current.stat().st_size,
+            md5_hash=compute_md5(current),
+            status="completed",
+        )
+        stale_doc = Document(
+            kb_id=scope.kb_id,
+            user_id=scope.user_id,
+            filename="old.md",
+            file_path=str(tmp_path / "old.md"),
+            file_size=3,
+            md5_hash="0" * 32,
+            status="completed",
+        )
+        other_scope_doc = Document(
+            kb_id=999,
+            user_id=999,
+            filename="other.md",
+            file_path=str(tmp_path / "other.md"),
+            file_size=3,
+            md5_hash="1" * 32,
+            status="completed",
+        )
+        db.add_all([current_doc, stale_doc, other_scope_doc])
+        db.commit()
+        stale_id = stale_doc.id
+    finally:
+        db.close()
+
+    vector_deletes = []
+    bm25_deletes = []
+    pruned = prune_stale_eval_documents(
+        sqlite_session_factory,
+        scope,
+        [current],
+        delete_vector=lambda delete_scope, doc_id: vector_deletes.append((delete_scope, doc_id)),
+        remove_bm25=lambda doc_id: bm25_deletes.append(doc_id),
+    )
+
+    assert pruned == ["old.md"]
+    assert vector_deletes == [(scope, stale_id)]
+    assert bm25_deletes == [stale_id]
+    assert current.exists()
+    db = sqlite_session_factory()
+    try:
+        assert {doc.filename for doc in db.query(Document).all()} == {"current.md", "other.md"}
+    finally:
+        db.close()
+
+
 def write_fixture_golden(path: Path) -> None:
     rows = [answerable_entry(), unanswerable_entry()]
     path.write_text(
@@ -486,8 +555,14 @@ def write_fixture_golden(path: Path) -> None:
     )
 
 
-def make_eval_dependencies(sqlite_session_factory, timestamps, search_calls=None):
+def make_eval_dependencies(
+    sqlite_session_factory,
+    timestamps,
+    search_calls=None,
+    rebuild_calls=None,
+):
     calls = search_calls if search_calls is not None else []
+    rebuilds = rebuild_calls if rebuild_calls is not None else []
 
     def process_document(doc_id, session_factory):
         db = session_factory()
@@ -512,6 +587,9 @@ def make_eval_dependencies(sqlite_session_factory, timestamps, search_calls=None
     return EvalDependencies(
         session_factory=sqlite_session_factory,
         process_document=process_document,
+        rebuild_bm25=lambda session_factory: rebuilds.append(session_factory),
+        delete_vector=lambda scope, doc_id: None,
+        remove_bm25=lambda doc_id: None,
         hybrid_search=search,
         rewrite_query=rewrite,
         commit_getter=lambda: "abc123",
@@ -563,6 +641,32 @@ def test_run_evaluation_fixture_is_end_to_end_and_summary_is_byte_deterministic(
         "gs-v1-0002",
     ]
     assert manifest["duration_seconds"] == 0.0
+
+
+def test_run_evaluation_rebuilds_bm25_on_every_process_independent_run(
+    tmp_path,
+    sqlite_session_factory,
+):
+    golden = tmp_path / "golden.jsonl"
+    golden.write_text(json.dumps(answerable_entry(), ensure_ascii=False) + "\n", encoding="utf-8")
+    corpus = tmp_path / "test_docs"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("RRF", encoding="utf-8")
+    rebuild_calls = []
+    dependencies = make_eval_dependencies(
+        sqlite_session_factory,
+        [
+            datetime(2026, 8, 23, 12, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 8, 23, 12, 0, 1, tzinfo=timezone.utc),
+        ],
+        rebuild_calls=rebuild_calls,
+    )
+    config = EvalConfig(golden, "bm25", 20, False, corpus, tmp_path / "runs")
+
+    run_evaluation(config, dependencies)
+    run_evaluation(config, dependencies)
+
+    assert rebuild_calls == [sqlite_session_factory, sqlite_session_factory]
 
 
 def test_run_evaluation_only_calls_rewrite_when_explicitly_enabled(

@@ -10,6 +10,7 @@ import json
 import math
 import platform
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -48,6 +49,9 @@ class CorpusIndexError(RuntimeError):
 class EvalDependencies:
     session_factory: SessionFactory
     process_document: Callable[[int, SessionFactory], None]
+    rebuild_bm25: Callable[[SessionFactory], None]
+    delete_vector: Callable[[TenantScope, int], None]
+    remove_bm25: Callable[[int], None]
     hybrid_search: SearchFn
     rewrite_query: RewriteFn | None
     commit_getter: Callable[[], str]
@@ -80,6 +84,7 @@ class EvalConfig:
 
 def ensure_eval_scope(session_factory: SessionFactory) -> TenantScope:
     """Create or reuse the reserved local-only evaluation tenant and KB."""
+    from app.auth import hash_password
     from app.models import KnowledgeBase, User
 
     db = session_factory()
@@ -88,7 +93,7 @@ def ensure_eval_scope(session_factory: SessionFactory) -> TenantScope:
         if user is None:
             user = User(
                 username=EVAL_USERNAME,
-                password_hash="evaluation-only-account-login-disabled",
+                password_hash=hash_password(secrets.token_urlsafe(48)),
             )
             db.add(user)
             db.flush()
@@ -137,6 +142,51 @@ def discover_corpus(test_docs: Path) -> list[Path]:
     if not corpus:
         raise CorpusIndexError(f"评测语料目录中没有生产解析器支持的文档: {test_docs}")
     return corpus
+
+
+def prune_stale_eval_documents(
+    session_factory: SessionFactory,
+    scope: TenantScope,
+    corpus: list[Path],
+    delete_vector: Callable[[TenantScope, int], None],
+    remove_bm25: Callable[[int], None],
+) -> list[str]:
+    """Remove obsolete runtime indexes from the reserved evaluation scope.
+
+    Original corpus files are deliberately untouched. Only Chroma rows, the
+    in-memory BM25 entry, and evaluation-owned database metadata are removed.
+    """
+    from app.models import Document
+    from app.services.document_service import compute_md5
+
+    current_hashes = {compute_md5(path) for path in corpus}
+    db = session_factory()
+    try:
+        stale = (
+            db.query(Document)
+            .filter(
+                Document.user_id == scope.user_id,
+                Document.kb_id == scope.kb_id,
+            )
+            .all()
+        )
+        stale = sorted(
+            (document for document in stale if document.md5_hash not in current_hashes),
+            key=lambda document: (document.filename.casefold(), document.id),
+        )
+        names: list[str] = []
+        for document in stale:
+            delete_vector(scope, document.id)
+            remove_bm25(document.id)
+            names.append(document.filename)
+            db.delete(document)
+        db.commit()
+        return names
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def ensure_corpus_indexed(
@@ -465,7 +515,8 @@ def get_environment_versions() -> dict[str, str]:
 
 
 def default_dependencies() -> EvalDependencies:
-    from app.core.vectorstore import hybrid_search
+    from app.core.bm25_search import rebuild_from_db, remove_document
+    from app.core.vectorstore import delete_by_document_id, hybrid_search
     from app.main import SessionLocal
     from app.services.document_service import process_document
     from app.services.query_rewrite import rewrite_query
@@ -473,6 +524,9 @@ def default_dependencies() -> EvalDependencies:
     return EvalDependencies(
         session_factory=SessionLocal,
         process_document=process_document,
+        rebuild_bm25=rebuild_from_db,
+        delete_vector=delete_by_document_id,
+        remove_bm25=remove_document,
         hybrid_search=hybrid_search,
         rewrite_query=rewrite_query,
         commit_getter=get_git_commit,
@@ -498,12 +552,21 @@ def run_evaluation(config: EvalConfig, dependencies: EvalDependencies) -> Path:
     entries = load_and_validate(config.golden)
     corpus = discover_corpus(config.test_docs)
     scope = ensure_eval_scope(dependencies.session_factory)
+    pruned = prune_stale_eval_documents(
+        dependencies.session_factory,
+        scope,
+        corpus,
+        dependencies.delete_vector,
+        dependencies.remove_bm25,
+    )
     corpus_stats = ensure_corpus_indexed(
         dependencies.session_factory,
         scope,
         corpus,
         dependencies.process_document,
     )
+    corpus_stats["pruned"] = pruned
+    dependencies.rebuild_bm25(dependencies.session_factory)
 
     query_variants: QueryVariantsFn | None = None
     if config.rewrite_enabled:
