@@ -1,7 +1,5 @@
 # 贡献指南
 
-简体中文 | [English](CONTRIBUTING.en.md)
-
 感谢关注 LocalRAG！无论是提 Issue、修 Bug、写文档还是做新功能，都欢迎。花两分钟读完这份指南，能让你的贡献更快被合并。
 
 ## 行为准则
