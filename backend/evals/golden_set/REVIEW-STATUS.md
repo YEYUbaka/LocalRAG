@@ -23,12 +23,12 @@
 
 抽查应逐条确认问题可读、答案要点正确、locator 能定位原文、来源文档合理；不可回答题还应确认 24 份受控语料均无答案依据。
 
-## 已知解析链路缺陷
+## 解析链路缺陷与处理结果
 
-新增表格语料本身已通过原生结构和可视化检查，但当前生产解析链路存在以下缺陷，必须在基线中如实暴露，不能通过改写 Golden 问题规避：
+新增表格语料本身已通过原生结构和可视化检查。P1-05 首次真实基线确认并修复以下生产解析缺陷，Golden 问题和语料事实未做迎合性修改：
 
-1. `Git常用命令对照表.xlsx`：`UnstructuredExcelLoader` 因环境缺少 `unstructured` 抛出 `ModuleNotFoundError`；文件可由 openpyxl 和 Microsoft Excel 正常读取。
-2. `Linux文本处理三剑客.csv`：`CSVLoader` 未显式指定 UTF-8，在中文 Windows 上按 GBK 解码并抛出 `UnicodeDecodeError`；文件按 UTF-8 使用标准库可完整读取 16 行、4 列。
+1. `Git常用命令对照表.xlsx`：原 `UnstructuredExcelLoader` 因环境缺少 `unstructured` 抛出 `ModuleNotFoundError`；现使用项目已有 `openpyxl` 按工作表读取原生单元格。
+2. `Linux文本处理三剑客.csv`：原 `CSVLoader` 在中文 Windows 上按 GBK 解码并抛出 `UnicodeDecodeError`；现显式使用 UTF-8。
 3. `HTTP状态码速查表.docx`：现有 `Docx2txtLoader` 可解析，抽取 1 个文档、1522 个字符。
 
-解析问题和数据问题已经区分记录；不得为了提高指标改变题目或语料事实。
+修复后 24/24 份语料成功进入真实索引。15 条 `ocr_table` 的 rewrite-off Recall@20 为 0.733333，4 条未命中已如实记录在 `docs/quality/phase-1-baseline.md`；不得为了提高指标改变题目或语料事实。
