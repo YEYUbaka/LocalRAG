@@ -1,7 +1,7 @@
 """Tag management API."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.models import Tag, DocumentTag, Document
@@ -35,8 +35,7 @@ class TagResponse(BaseModel):
     color: str
     doc_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 @router.get("", response_model=list[TagResponse])
