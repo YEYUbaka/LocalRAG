@@ -116,8 +116,9 @@ Owner 是**角色**而非具体人。认领方式：在本文件对应的 GitHub
 
 ### P1-00 启动清理（0.5 天）— QA/Infra Owner
 
-- [ ] 上游设计 §10 写的启动 tag 是 `quality-p0`，实际是 `phase0-security-accepted`：修改设计文档措辞对齐现实。
-- [ ] 清理 CLAUDE.md / AGENTS.md 中指向已删除 `plans/*.md` 的失效引用，补入 `docs/quality/` 现有档案。
+- [x] 清理 AGENTS.md / CLAUDE.md 中指向已删除 `plans/*.md` 的失效引用（e030026）。
+- [x] CLAUDE.md 已并入 AGENTS.md 并退役为占位文件；此后**仅维护 AGENTS.md 一份指南**。
+- [ ] 上游设计 §10 写的启动 tag 是 `quality-p0`，实际是 `phase0-security-accepted`：修改设计文档措辞对齐现实（涉及 Frozen 文档，需 Contract Owner 确认）。
 
 验收：全仓库 Markdown 内部链接均可解析（可用 `Get-ChildItem -Recurse *.md` + 链接抽取脚本自查）。
 
@@ -294,7 +295,7 @@ A：`.pytest_cache` 写入失败的 PytestCacheWarning 可忽略，不影响结�
 
 | 任务 | Owner | 状态 | PR / 备注 |
 | --- | --- | --- | --- |
-| P1-00 启动清理 | QA/Infra | ✅ 部分：CLAUDE/AGENTS 引用已清理；tag 名对齐待办 | deff5e7 之后 |
+| P1-00 启动清理 | QA/Infra | 🔄 引用清理与 CLAUDE.md 退役完成（e030026）；tag 名对齐待办 |
 | P1-01 Golden Set v1 | RAG + 全员 | ⬜ 未开始 | 可多人并行 |
 | P1-02 评测 CLI | RAG | ⬜ 未开始 | 依赖 P1-01 首批 40 条即可开工 |
 | P1-03 域契约冻结 | Contract | ⬜ 未开始 | 与 P1-01 并行 |
