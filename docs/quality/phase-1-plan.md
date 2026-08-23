@@ -296,10 +296,10 @@ A：`.pytest_cache` 写入失败的 PytestCacheWarning 可忽略，不影响结�
 | 任务 | Owner | 状态 | PR / 备注 |
 | --- | --- | --- | --- |
 | P1-00 启动清理 | QA/Infra | 🔄 引用清理与 CLAUDE.md 退役完成（e030026）；tag 名对齐待办 |
-| P1-01 Golden Set v1 | RAG + 全员 | 🔄 机器草稿待人工复核 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9) 已起草 56 条、覆盖 17 篇 interview Markdown 与四类非 OCR 题型；尚未生成正式 v1 |
-| P1-02 评测 CLI | RAG | 🔄 CLI 已合入，真实基线暂缓 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9)；24 文档 rewrite off/on 均已执行，但被全局 MD5 唯一约束阻断，详见 [基线报告](phase-1-baseline.md)，P1-05 后强制补跑 |
+| P1-01 Golden Set v1 | RAG + 全员 | ✅ 120 条正式集已合入 | [PR #10](https://github.com/YEYUbaka/LocalRAG/pull/10)；24 份语料，含 15 条原生表格题；人工抽查状态见 REVIEW-STATUS |
+| P1-02 评测 CLI | RAG | 🔄 rewrite-off 基线完成 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9)；off 两轮逐题结果一致，on 因外部 LLM HTTP 502 待补，详见 [基线报告](phase-1-baseline.md) |
 | P1-03 域契约冻结 | Contract | ⬜ 未开始 | 与 P1-01 并行 |
 | P1-04 统一融合重构 | RAG | ⬜ 未开始 | 依赖 P1-02 基线 |
-| P1-05 Chunk 稳定 ID | Ingestion+RAG | ⬜ 未开始 | 依赖 P1-03 |
+| P1-05 Chunk 稳定 ID | Ingestion+RAG | 🔄 实现与本地验证完成 | 租户级 MD5、稳定 ID、迁移与表格解析已完成；等待 PR 五门禁，rewrite-on 外部 502 另行补测 |
 | A3 备份/Docker | Security/Infra | ⬜ 未开始 | 支线 |
 | C1 前端测试基线 | Frontend | ⬜ 未开始 | 支线 |

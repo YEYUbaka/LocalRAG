@@ -61,6 +61,7 @@ def add_document_chunks(scope: TenantScope, document_id: int, chunks: list[str],
         for i, meta in enumerate(metadatas or [{}] * len(chunks)):
             enriched.append({
                 **meta,
+                "chunk_id": meta.get("chunk_id", f"doc_{document_id}_chunk_{i}"),
                 "owner_id": scope.user_id,
                 "kb_id": scope.kb_id,
                 "doc_id": document_id,
@@ -110,7 +111,7 @@ def bm25_search(scope: TenantScope, query: str, top_k: int = 20) -> list[dict]:
         if owner != scope.user_id or kb_id != scope.kb_id:
             continue
         results.append({
-            "id": f"doc_{doc_id}_chunk_{idx}",
+            "id": meta.get("chunk_id", f"doc_{doc_id}_chunk_{idx}"),
             "document": text,
             "doc_id": doc_id,
             "bm25_score": float(scores[idx]),

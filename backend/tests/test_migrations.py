@@ -8,8 +8,10 @@ rejects revision drift.
 from pathlib import Path
 
 import pytest
+from sqlalchemy import UniqueConstraint
 
 from app.domain.tenant import TenantScope
+from app.models import Document
 
 
 def test_alembic_revisions_chain_is_linear_and_ordered():
@@ -34,3 +36,19 @@ def test_models_do_not_require_startup_ddl():
     assert hasattr(models, "User")
     assert hasattr(models, "Document")
     assert hasattr(models, "Tag")
+
+
+def test_document_md5_uniqueness_is_tenant_scoped():
+    assert not Document.__table__.c.md5_hash.unique
+    unique_columns = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in Document.__table__.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert ("user_id", "kb_id", "md5_hash") in unique_columns
+
+
+def test_document_has_stable_chunk_identity_fields():
+    assert Document.__table__.c.document_key.nullable
+    assert not Document.__table__.c.document_version.nullable
+    assert not Document.__table__.c.chunker_version.nullable

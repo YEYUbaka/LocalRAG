@@ -1,11 +1,18 @@
 """Test document service functions."""
 
+import hashlib
 from unittest.mock import MagicMock
 from pathlib import Path
 import tempfile
 import os
 
-from app.services.document_service import compute_md5, compute_page_breaks
+from app.services.document_service import (
+    CHUNKER_VERSION,
+    build_stable_chunk_metadata,
+    compute_md5,
+    compute_page_breaks,
+    parse_document,
+)
 
 
 def test_compute_md5():
@@ -64,3 +71,40 @@ def test_compute_page_breaks_single_page():
 
     result = compute_page_breaks([doc])
     assert result == [0]
+
+
+def test_build_stable_chunk_metadata_is_deterministic():
+    texts = ["第一段", "第二段"]
+    source = [{"filename": "示例.md"}, {"filename": "示例.md", "page": 1}]
+
+    first = build_stable_chunk_metadata("abc123", 2, texts, source)
+    second = build_stable_chunk_metadata("abc123", 2, texts, source)
+
+    assert first == second
+    assert [item["chunk_id"] for item in first] == [
+        f"abc123-v2-c{CHUNKER_VERSION}-000000",
+        f"abc123-v2-c{CHUNKER_VERSION}-000001",
+    ]
+    assert first[0]["content_hash"] == hashlib.sha256("第一段".encode("utf-8")).hexdigest()
+    assert first[1]["page"] == 1
+
+
+def test_parse_utf8_csv_table_corpus():
+    path = Path(__file__).resolve().parents[2] / "test_docs" / "Linux文本处理三剑客.csv"
+
+    documents = parse_document(path)
+    content = "\n".join(document.page_content for document in documents)
+
+    assert "工具: grep" in content
+    assert "示例: grep -n 'error' app.log" in content
+
+
+def test_parse_xlsx_table_corpus_without_unstructured_dependency():
+    path = Path(__file__).resolve().parents[2] / "test_docs" / "Git常用命令对照表.xlsx"
+
+    documents = parse_document(path)
+    content = "\n".join(document.page_content for document in documents)
+
+    assert {document.metadata["sheet"] for document in documents} == {"基础操作", "分支与远程"}
+    assert "命令\t作用\t示例" in content
+    assert "git status" in content
