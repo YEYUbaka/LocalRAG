@@ -10,7 +10,6 @@ import json
 import math
 import platform
 import re
-import secrets
 import subprocess
 import sys
 import time
@@ -37,7 +36,9 @@ QueryVariantsFn = Callable[[str], list[str]]
 SessionFactory = Callable[[], Session]
 RewriteFn = Callable[[str], Awaitable[list[str]]]
 
-EVAL_USERNAME = "__localrag_eval__"
+# TenantScope requires positive IDs. The signed-INT ceiling stays outside the
+# practical auto-increment user range without inserting a login-capable User.
+EVAL_USER_ID = 2_147_483_647
 EVAL_KB_NAME = "__localrag_eval__"
 
 
@@ -84,24 +85,14 @@ class EvalConfig:
 
 def ensure_eval_scope(session_factory: SessionFactory) -> TenantScope:
     """Create or reuse the reserved local-only evaluation tenant and KB."""
-    from app.auth import hash_password
-    from app.models import KnowledgeBase, User
+    from app.models import KnowledgeBase
 
     db = session_factory()
     try:
-        user = db.query(User).filter(User.username == EVAL_USERNAME).first()
-        if user is None:
-            user = User(
-                username=EVAL_USERNAME,
-                password_hash=hash_password(secrets.token_urlsafe(48)),
-            )
-            db.add(user)
-            db.flush()
-
         kb = (
             db.query(KnowledgeBase)
             .filter(
-                KnowledgeBase.user_id == user.id,
+                KnowledgeBase.user_id == EVAL_USER_ID,
                 KnowledgeBase.name == EVAL_KB_NAME,
             )
             .first()
@@ -110,12 +101,12 @@ def ensure_eval_scope(session_factory: SessionFactory) -> TenantScope:
             kb = KnowledgeBase(
                 name=EVAL_KB_NAME,
                 description="LocalRAG deterministic retrieval evaluation corpus",
-                user_id=user.id,
+                user_id=EVAL_USER_ID,
             )
             db.add(kb)
             db.flush()
 
-        scope = TenantScope(user_id=user.id, kb_id=kb.id)
+        scope = TenantScope(user_id=EVAL_USER_ID, kb_id=kb.id)
         db.commit()
         return scope
     except Exception:

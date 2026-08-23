@@ -315,18 +315,16 @@ def test_ensure_eval_scope_creates_and_reuses_fixed_user_and_kb(sqlite_session_f
     second = ensure_eval_scope(sqlite_session_factory)
 
     assert first == second
-    assert first.user_id > 0
+    assert first.user_id == 2_147_483_647
     assert first.kb_id > 0
 
     db = sqlite_session_factory()
     try:
         from app.models import KnowledgeBase, User
-        from app.auth import pwd_context
 
-        assert db.query(User).filter(User.username == "__localrag_eval__").count() == 1
-        assert db.query(KnowledgeBase).filter(KnowledgeBase.name == "__localrag_eval__").count() == 1
-        eval_user = db.query(User).filter(User.username == "__localrag_eval__").one()
-        assert pwd_context.identify(eval_user.password_hash) == "bcrypt"
+        assert db.query(User).count() == 0
+        eval_kb = db.query(KnowledgeBase).filter(KnowledgeBase.name == "__localrag_eval__").one()
+        assert eval_kb.user_id == 2_147_483_647
     finally:
         db.close()
 
