@@ -1,0 +1,72 @@
+name: 🐛 Bug 报告
+description: 报告一个问题，帮助我们把 LocalRAG 做得更稳
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请先搜索 [已有 Issue](https://github.com/YEYUbaka/LocalRAG/issues) 避免重复。
+        ⚠️ 日志中请勿包含 API Key、密码、`JWT_SECRET` 等敏感信息。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 简明扼要地说明遇到了什么问题。
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 上传 xxx.pdf
+        2. 在聊天面板提问 '...'
+        3. 出现报错 ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为与实际行为
+      placeholder: 期望返回带引用的答案；实际返回 500 / 空结果 / 引用错位。
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 影响组件
+      options:
+        - 检索/问答（召回、排序、引用）
+        - 对话与流式输出（SSE）
+        - 文档解析与导入（PDF/Office/URL）
+        - 前端界面
+        - 认证与多用户
+        - Docker 部署
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      placeholder: |
+        - 操作系统：Windows 11 / macOS 14 / Ubuntu 22.04
+        - 部署方式：源码启动 / docker compose
+        - LLM 配置：Qwen-max / DeepSeek-chat / Ollama llama3（无需提供 key）
+        - 浏览器（前端问题）：Chrome xx
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志与截图（已脱敏）
+      description: 后端控制台输出、浏览器 Console 报错或界面截图。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认项
+      options:
+        - label: 我已搜索过现有 Issue，没有找到重复报告
+          required: true
+        - label: 我确认日志与截图中不含密钥和个人隐私数据
+          required: true

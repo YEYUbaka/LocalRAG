@@ -185,6 +185,10 @@ conda run -n localrag python -m pytest tests/ -v
 - 联网搜索与 Reranker 修复设计：`docs/superpowers/specs/2026-06-17-web-search-reranker-fix-design.md`
 - 稳定化设计：`docs/superpowers/specs/2026-06-19-stabilization-design.md`
 
+## 参与贡献
+
+欢迎任何形式的贡献：Bug 反馈、功能建议、文档完善、代码 PR。开始前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [行为准则](CODE_OF_CONDUCT.md)；Bug 和功能请使用 Issue 模板提交。安全漏洞请勿公开提交，参见 [SECURITY.md](SECURITY.md)。
+
 ## License
 
-MIT
+本项目基于 [MIT](LICENSE) 协议开源。
