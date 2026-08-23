@@ -1,5 +1,7 @@
 # LocalRAG
 
+简体中文 | [English](README.en.md)
+
 基于 RAG（检索增强生成）的本地个人知识库系统。将关键词搜索升级为语义问答：上传文档后，系统自动解析、向量化存储，支持通过自然语言提问获取带引用来源的答案。
 
 **本地优先**：原始文档和向量索引完全保存在本地，仅将脱敏后的检索片段发送至云端 LLM。
@@ -160,9 +162,9 @@ frontend/
     services/     # API 调用和 SSE 封装
     types/        # TypeScript 类型定义
 data/             # 本地数据（chromadb/, uploads/, models/）
-test_docs/        # 示例文档（面试求职知识库，17 篇，覆盖 200+ 面试题）
-docs/             # 设计文档
-plans/            # 实施计划
+test_docs/        # 示例与评测语料（24 个：Markdown/TXT/PDF/DOCX/XLSX/CSV）
+docs/             # 设计文档与质量工程档案
+.github/workflows/quality-gates.yml   # CI 五门禁
 ```
 
 ## 测试
