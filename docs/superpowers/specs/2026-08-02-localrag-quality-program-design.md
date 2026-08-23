@@ -177,7 +177,7 @@ Golden Set v1 至少 120 条：55 普通事实、15 多片段、15 精确术语�
 
 | 阶段 | 周期 | 可验收结果 |
 |---|---:|---|
-| Phase 0 | 1–2 周 | clean baseline、红灯清零、CI、契约、P0 安全修复、Alembic、Eval 骨架 |
+| Phase 0 | 1–2 周 | clean baseline、红灯清零、CI、契约、P0 安全修复、Alembic、Eval 骨架；启动 tag `phase0-security-accepted` |
 | Phase 1 | 3–4 周 | Golden v1、稳定 Chunk/索引身份、统一多查询融合、结构化文档模型 |
 | Phase 2 | 5–7 周 | Docling/OCR、父子分块、表格/图片 provenance、可恢复摄取 Worker |
 | Phase 3 | 8–9 周 | CitationV2、精确高亮、Chunk 预览、任务中心、反馈采集 |
