@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -12,6 +13,7 @@ from app.models import Base, Document
 from scripts.run_evals import (
     CorpusIndexError,
     EvalConfig,
+    EvalDependencies,
     aggregate_metrics,
     build_parser,
     discover_corpus,
@@ -20,6 +22,8 @@ from scripts.run_evals import (
     evaluate_entries,
     stable_json_bytes,
     temporary_eval_settings,
+    run_evaluation,
+    main,
     write_run_artifacts,
 )
 
@@ -472,3 +476,170 @@ def test_ensure_corpus_indexed_refuses_global_md5_collision(tmp_path, sqlite_ses
 
     with pytest.raises(CorpusIndexError, match="全局 MD5 唯一约束冲突.*user-document.md"):
         ensure_corpus_indexed(sqlite_session_factory, scope, [path], lambda *_: None)
+
+
+def write_fixture_golden(path: Path) -> None:
+    rows = [answerable_entry(), unanswerable_entry()]
+    path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+
+def make_eval_dependencies(sqlite_session_factory, timestamps, search_calls=None):
+    calls = search_calls if search_calls is not None else []
+
+    def process_document(doc_id, session_factory):
+        db = session_factory()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).one()
+            doc.status = "completed"
+            doc.chunk_count = 1
+            db.commit()
+        finally:
+            db.close()
+
+    def search(scope, question):
+        calls.append(question)
+        if question in {"什么是 RRF？", "RRF 改写"}:
+            return [result("expected", "a.md", distance=0.1, rerank_score=4.2)]
+        return []
+
+    async def rewrite(question):
+        return [question, "RRF 改写"] if question == "什么是 RRF？" else [question]
+
+    timestamp_iter = iter(timestamps)
+    return EvalDependencies(
+        session_factory=sqlite_session_factory,
+        process_document=process_document,
+        hybrid_search=search,
+        rewrite_query=rewrite,
+        commit_getter=lambda: "abc123",
+        environment_getter=lambda: {"python": "3.11-test", "chromadb": "test"},
+        now=lambda: next(timestamp_iter),
+        monotonic=lambda: 100.0,
+    )
+
+
+def test_run_evaluation_fixture_is_end_to_end_and_summary_is_byte_deterministic(
+    tmp_path,
+    sqlite_session_factory,
+):
+    golden = tmp_path / "golden.jsonl"
+    write_fixture_golden(golden)
+    corpus = tmp_path / "test_docs"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("RRF 是倒数排名融合。", encoding="utf-8")
+    runs = tmp_path / "runs"
+    timestamps = [
+        datetime(2026, 8, 23, 12, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 23, 12, 0, 1, tzinfo=timezone.utc),
+    ]
+    dependencies = make_eval_dependencies(sqlite_session_factory, timestamps)
+    config = EvalConfig(golden, "fixture", 20, False, corpus, runs)
+
+    first_dir = run_evaluation(config, dependencies)
+    second_dir = run_evaluation(config, dependencies)
+
+    assert first_dir != second_dir
+    assert (first_dir / "summary.json").read_bytes() == (second_dir / "summary.json").read_bytes()
+    summary = json.loads((first_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["commit"] == "abc123"
+    assert summary["metrics"] == {
+        "answerable_count": 1,
+        "mrr_at_10": 1.0,
+        "ndcg_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "rerank_recall_at_5": 1.0,
+        "unanswerable_count": 1,
+        "unanswerable_recall": 1.0,
+    }
+    assert summary["parameters"]["corpus_count"] == 1
+    assert len(summary["parameters"]["corpus_sha256"]) == 64
+    manifest = json.loads((first_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["corpus"]["indexed"] == ["a.md"]
+    assert [detail["question_id"] for detail in manifest["details"]] == [
+        "gs-v1-0001",
+        "gs-v1-0002",
+    ]
+    assert manifest["duration_seconds"] == 0.0
+
+
+def test_run_evaluation_only_calls_rewrite_when_explicitly_enabled(
+    tmp_path,
+    sqlite_session_factory,
+):
+    golden = tmp_path / "golden.jsonl"
+    golden.write_text(json.dumps(answerable_entry(), ensure_ascii=False) + "\n", encoding="utf-8")
+    corpus = tmp_path / "test_docs"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("RRF", encoding="utf-8")
+    calls = []
+    dependencies = make_eval_dependencies(
+        sqlite_session_factory,
+        [datetime(2026, 8, 23, 12, 0, 0, tzinfo=timezone.utc)],
+        calls,
+    )
+    config = EvalConfig(golden, "rewrite-on", 20, True, corpus, tmp_path / "runs")
+
+    run_evaluation(config, dependencies)
+
+    assert calls == ["什么是 RRF？", "RRF 改写"]
+
+
+def test_main_runs_with_injected_dependencies_and_prints_artifact_path(
+    tmp_path,
+    sqlite_session_factory,
+    capsys,
+):
+    golden = tmp_path / "golden.jsonl"
+    write_fixture_golden(golden)
+    corpus = tmp_path / "test_docs"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("RRF", encoding="utf-8")
+    runs = tmp_path / "runs"
+    dependencies = make_eval_dependencies(
+        sqlite_session_factory,
+        [datetime(2026, 8, 23, 12, 0, 0, tzinfo=timezone.utc)],
+    )
+
+    exit_code = main(
+        [
+            "--golden",
+            str(golden),
+            "--label",
+            "fixture",
+            "--test-docs",
+            str(corpus),
+            "--runs-dir",
+            str(runs),
+        ],
+        dependencies=dependencies,
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "评测完成" in output
+    assert "recall_at_20=1.000000" in output
+    assert str(runs) in output
+
+
+def test_main_returns_nonzero_for_invalid_golden(
+    tmp_path,
+    sqlite_session_factory,
+    capsys,
+):
+    golden = tmp_path / "invalid.jsonl"
+    golden.write_text("{}\n", encoding="utf-8")
+    dependencies = make_eval_dependencies(
+        sqlite_session_factory,
+        [datetime(2026, 8, 23, 12, 0, 0, tzinfo=timezone.utc)],
+    )
+
+    exit_code = main(
+        ["--golden", str(golden), "--label", "invalid"],
+        dependencies=dependencies,
+    )
+
+    assert exit_code == 1
+    assert "评测失败" in capsys.readouterr().err

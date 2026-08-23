@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
+import importlib.metadata
 import json
 import math
+import platform
 import re
+import subprocess
 import sys
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any, Awaitable, Callable, Iterator, Sequence
 
 from sqlalchemy.orm import Session
 
@@ -29,6 +34,7 @@ from app.domain.tenant import TenantScope
 SearchFn = Callable[[TenantScope, str], list[dict[str, Any]]]
 QueryVariantsFn = Callable[[str], list[str]]
 SessionFactory = Callable[[], Session]
+RewriteFn = Callable[[str], Awaitable[list[str]]]
 
 EVAL_USERNAME = "__localrag_eval__"
 EVAL_KB_NAME = "__localrag_eval__"
@@ -36,6 +42,18 @@ EVAL_KB_NAME = "__localrag_eval__"
 
 class CorpusIndexError(RuntimeError):
     """Raised when the isolated evaluation corpus cannot be indexed safely."""
+
+
+@dataclass(frozen=True)
+class EvalDependencies:
+    session_factory: SessionFactory
+    process_document: Callable[[int, SessionFactory], None]
+    hybrid_search: SearchFn
+    rewrite_query: RewriteFn | None
+    commit_getter: Callable[[], str]
+    environment_getter: Callable[[], dict[str, str]]
+    now: Callable[[], datetime]
+    monotonic: Callable[[], float]
 
 
 @dataclass(frozen=True)
@@ -197,6 +215,17 @@ def ensure_corpus_indexed(
         "indexed": indexed,
         "skipped": skipped,
     }
+
+
+def corpus_fingerprint(corpus: list[Path]) -> str:
+    """Hash corpus names and bytes in discovery order."""
+    digest = hashlib.sha256()
+    for path in corpus:
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _filename(item: dict[str, Any]) -> str | None:
@@ -410,9 +439,155 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    raise RuntimeError("评测 CLI 编排尚未完成")
+def get_git_commit() -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=PROJECT_DIR,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return completed.stdout.strip()
+
+
+def get_environment_versions() -> dict[str, str]:
+    versions = {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+    }
+    for distribution in ("chromadb", "FlagEmbedding", "langchain", "sqlalchemy"):
+        try:
+            versions[distribution] = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            versions[distribution] = "not-installed"
+    return versions
+
+
+def default_dependencies() -> EvalDependencies:
+    from app.core.vectorstore import hybrid_search
+    from app.main import SessionLocal
+    from app.services.document_service import process_document
+    from app.services.query_rewrite import rewrite_query
+
+    return EvalDependencies(
+        session_factory=SessionLocal,
+        process_document=process_document,
+        hybrid_search=hybrid_search,
+        rewrite_query=rewrite_query,
+        commit_getter=get_git_commit,
+        environment_getter=get_environment_versions,
+        now=lambda: datetime.now(timezone.utc),
+        monotonic=time.perf_counter,
+    )
+
+
+def _iso_timestamp(value: datetime) -> str:
+    return value.isoformat(timespec="microseconds")
+
+
+def run_evaluation(config: EvalConfig, dependencies: EvalDependencies) -> Path:
+    """Run one evaluation and return its immutable artifact directory."""
+    from scripts.validate_golden import load_and_validate
+
+    if config.top_k < 1:
+        raise ValueError("top_k 必须大于 0")
+
+    started_at = dependencies.now()
+    started_clock = dependencies.monotonic()
+    entries = load_and_validate(config.golden)
+    corpus = discover_corpus(config.test_docs)
+    scope = ensure_eval_scope(dependencies.session_factory)
+    corpus_stats = ensure_corpus_indexed(
+        dependencies.session_factory,
+        scope,
+        corpus,
+        dependencies.process_document,
+    )
+
+    query_variants: QueryVariantsFn | None = None
+    if config.rewrite_enabled:
+        if dependencies.rewrite_query is None:
+            raise RuntimeError("已启用查询改写，但未提供 rewrite_query")
+
+        def query_variants(question: str) -> list[str]:
+            return asyncio.run(dependencies.rewrite_query(question))
+
+    with temporary_eval_settings(config.top_k, config.rewrite_enabled):
+        details = evaluate_entries(
+            entries,
+            scope,
+            dependencies.hybrid_search,
+            query_variants=query_variants,
+        )
+
+    parameters = config.parameters()
+    parameters.update({
+        "corpus_count": len(corpus),
+        "corpus_files": [path.name for path in corpus],
+        "corpus_sha256": corpus_fingerprint(corpus),
+    })
+    commit = dependencies.commit_getter()
+    metrics = aggregate_metrics(details)
+    duration_seconds = dependencies.monotonic() - started_clock
+
+    summary = {
+        "schema_version": 1,
+        "commit": commit,
+        "parameters": parameters,
+        "metrics": metrics,
+    }
+    manifest = {
+        "schema_version": 1,
+        "generated_at": _iso_timestamp(started_at),
+        "label": config.label,
+        "commit": commit,
+        "parameters": parameters,
+        "environment": dependencies.environment_getter(),
+        "scope": {"user_id": scope.user_id, "kb_id": scope.kb_id},
+        "corpus": corpus_stats,
+        "duration_seconds": duration_seconds,
+        "details": details,
+    }
+    return write_run_artifacts(
+        config.runs_dir,
+        config.label,
+        started_at,
+        manifest,
+        summary,
+    )
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    dependencies: EvalDependencies | None = None,
+) -> int:
+    args = build_parser().parse_args(argv)
+    config = EvalConfig(
+        golden=args.golden,
+        label=args.label,
+        top_k=args.top_k,
+        rewrite_enabled=args.enable_rewrite,
+        test_docs=args.test_docs,
+        runs_dir=args.runs_dir,
+    )
+    try:
+        run_dir = run_evaluation(config, dependencies or default_dependencies())
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"评测失败：{exc}", file=sys.stderr)
+        return 1
+
+    metrics = summary["metrics"]
+    metric_text = " ".join(
+        f"{name}={value:.6f}"
+        for name, value in metrics.items()
+        if name not in {"answerable_count", "unanswerable_count"}
+    )
+    print(f"评测完成：{run_dir}")
+    print(metric_text)
+    return 0
 
 
 if __name__ == "__main__":
