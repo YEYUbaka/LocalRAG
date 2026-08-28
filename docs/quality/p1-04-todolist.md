@@ -32,6 +32,10 @@
 
 ## 3. 环境坑（跑之前必读）
 
+- **2026-08-29 安全事件记录**：本文档初版曾把真实本地数据库口令写入 §4 命令并推上远端，已通过重写分支历史
+  （force-push）清除，并给 `backend/scripts/check_secrets.py` 新增 `db_url_credentials` 规则 + 回归测试
+  （commit `62d1a2a`）。口令仅用于本机 localhost MySQL，风险有限，但建议有空时轮换本地 root 口令。
+
 - Git Bash 默认 python 是 3.9，**必须用** `D:/miniconda3/envs/localrag/python.exe`
 - pytest 需 `export JWT_SECRET='phase-zero-ci-secret-with-at-least-32-bytes'`
 - 评测命令后台跑时 `| tail` 会吞真实退出码，看日志文件末尾确认「评测完成」
