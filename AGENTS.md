@@ -146,6 +146,7 @@ docker compose up --build
 - PR 使用 [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)：说明问题与方案、列出验证命令、关联 Issue；UI 变更附截图。
 - **显式标注**数据库 schema、环境变量、检索参数默认值的变更（影响所有部署方），并同步 `.env.example` 与 Alembic 迁移。
 - CI 五门禁（backend/frontend/contracts/migrations/security）必须全绿；contracts 快照变更用 `python scripts/export_contracts.py --output contracts` 生成后一并提交。
+- **重大变更完成后必须同步远端**：新功能、架构/契约/数据库迁移、检索参数基线、质量档案等变更一经完成并验证，立即按 Conventional Commits 提交并 `git push` 到远端对应分支（新分支用 `git push -u origin <branch>`），不得长期滞留本地工作区；会话结束前须确认远端与本地一致（中断的半成品可先推 WIP 并注明）。
 
 ## 安全与配置
 

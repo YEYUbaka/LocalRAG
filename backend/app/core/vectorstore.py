@@ -51,7 +51,13 @@ def add_documents(scope: TenantScope, document_id: int, texts: list[str], metada
     )
 
 
-def vector_search(scope: TenantScope, query: str, top_k: int | None = None) -> list[dict]:
+def vector_search(
+    scope: TenantScope,
+    query: str,
+    top_k: int | None = None,
+    *,
+    apply_similarity_threshold: bool = True,
+) -> list[dict]:
     """Pure vector search using ChromaDB, scoped to owner + knowledge base."""
     collection = get_collection()
     if collection.count() == 0:
@@ -75,7 +81,7 @@ def vector_search(scope: TenantScope, query: str, top_k: int | None = None) -> l
     items = []
     for i in range(len(results["ids"][0])):
         dist = results["distances"][0][i]
-        if dist > settings.similarity_threshold:
+        if apply_similarity_threshold and dist > settings.similarity_threshold:
             continue
         items.append({
             "id": results["ids"][0][i],
@@ -118,6 +124,113 @@ def rrf_fusion(
     return [doc_lookup[doc_id] for doc_id, _ in ranked if doc_id in doc_lookup]
 
 
+def _stable_result_id(item: dict) -> str:
+    metadata = item.get("metadata") or {}
+    return str(metadata.get("chunk_id") or item["id"])
+
+
+def generalized_rrf(
+    ranked_signals: list[tuple[list[dict], float]],
+    *,
+    k: int = 60,
+) -> list[dict]:
+    """Fuse any number of ranked signals into one stable-ID candidate pool."""
+    candidates: dict[str, dict] = {}
+    scores: dict[str, float] = {}
+
+    for results, weight in ranked_signals:
+        seen_in_signal: set[str] = set()
+        for rank, item in enumerate(results):
+            chunk_id = _stable_result_id(item)
+            if chunk_id in seen_in_signal:
+                continue
+            seen_in_signal.add(chunk_id)
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + weight / (k + rank)
+
+            existing = candidates.get(chunk_id)
+            if existing is None:
+                existing = {**item, "id": chunk_id}
+                existing["metadata"] = {**(item.get("metadata") or {}), "chunk_id": chunk_id}
+                candidates[chunk_id] = existing
+            elif "distance" in item:
+                prior_distance = existing.get("distance")
+                if prior_distance is None or item["distance"] < prior_distance:
+                    existing["distance"] = item["distance"]
+
+    ranked = sorted(scores.items(), key=lambda pair: pair[1], reverse=True)
+    fused: list[dict] = []
+    for chunk_id, score in ranked:
+        candidate = candidates[chunk_id]
+        candidate["fusion_score"] = score
+        fused.append(candidate)
+    return fused
+
+
+def rerank_candidates(query: str, candidates: list[dict]) -> list[dict]:
+    """Apply the configured reranker once and return the configured final depth."""
+    if settings.rerank_enabled and candidates:
+        try:
+            from app.core.reranker import rerank
+
+            documents = [item["document"] for item in candidates]
+            scores = rerank(query, documents)
+            for item, score in zip(candidates, scores):
+                item["rerank_score"] = score
+            candidates.sort(key=lambda item: item.get("rerank_score", 0), reverse=True)
+
+            if settings.rerank_threshold > 0:
+                candidates = [
+                    item
+                    for item in candidates
+                    if item.get("rerank_score", 0) >= settings.rerank_threshold
+                ]
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                f"Reranking failed, using RRF order: {exc}"
+            )
+
+    return candidates[:settings.rerank_top_k]
+
+
+def unified_search(
+    scope: TenantScope,
+    original_query: str,
+    queries: list[str],
+) -> list[dict]:
+    """Retrieve all query variants, fuse once, and rerank using the original query."""
+    from app.core.bm25_search import bm25_search
+
+    ordered_queries = list(dict.fromkeys(queries or [original_query]))
+    if original_query not in ordered_queries:
+        ordered_queries.insert(0, original_query)
+
+    retrieval_k = settings.retrieval_top_k
+    vector_weight = 1 - settings.bm25_weight
+    ranked_signals: list[tuple[list[dict], float]] = []
+    for query in ordered_queries:
+        vector_results = vector_search(
+            scope,
+            query,
+            top_k=retrieval_k,
+            apply_similarity_threshold=False,
+        )
+        ranked_signals.append((vector_results, vector_weight))
+        if settings.hybrid_search:
+            ranked_signals.append((bm25_search(scope, query, top_k=retrieval_k), settings.bm25_weight))
+
+    fused = generalized_rrf(ranked_signals)
+    if settings.post_fusion_similarity_filter_enabled:
+        fused = [
+            item
+            for item in fused
+            if item.get("distance") is None
+            or item["distance"] <= settings.similarity_threshold
+        ]
+    return rerank_candidates(original_query, fused[:retrieval_k])
+
+
 def hybrid_search(scope: TenantScope, query: str) -> list[dict]:
     """Hybrid search: vector + BM25 with RRF fusion, or pure vector if hybrid is disabled."""
     if not settings.hybrid_search:
@@ -143,24 +256,7 @@ def hybrid_search(scope: TenantScope, query: str) -> list[dict]:
         top_n=retrieval_k,  # Keep more candidates for reranking
     )
 
-    # Reranking step
-    if settings.rerank_enabled and fused:
-        try:
-            from app.core.reranker import rerank
-            documents = [item["document"] for item in fused]
-            scores = rerank(query, documents)
-            for item, score in zip(fused, scores):
-                item["rerank_score"] = score
-            fused.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)
-
-            # Filter by rerank score threshold
-            if settings.rerank_threshold > 0:
-                fused = [item for item in fused if item.get("rerank_score", 0) >= settings.rerank_threshold]
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Reranking failed, using RRF order: {e}")
-
-    return fused[:settings.rerank_top_k]
+    return rerank_candidates(query, fused)
 
 
 def search(scope: TenantScope, query: str, top_k: int | None = None) -> list[dict]:
