@@ -11,7 +11,7 @@ langchain-text-splitters==1.1.2
 chromadb==1.5.9
 numpy>=1.26
 sentence-transformers==3.0.0
-pypdf==6.15.0
+pypdf==6.16.1
 docx2txt==0.8
 python-docx>=1.2.0
 python-multipart==0.0.31
