@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LocalRAG 前端设计方向对比</title>
+<style>
+:root{
+  --ink:#16191B;
+  --ink-2:#4E555B;
+  --ink-3:#868D93;
+  --rule:#E4E6E5;
+  --rule-2:#D2D5D3;
+  --paper:#FBFBFA;
+  --surface:#FFFFFF;
+  --font-ui:"Inter","PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  --font-mono:"JetBrains Mono","Cascadia Code","SF Mono",Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:var(--font-ui);font-size:14.5px;line-height:1.7;
+  color:var(--ink);background:var(--paper);
+  -webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+.wrap{max-width:1080px;margin:0 auto;padding:56px 28px 88px}
+
+/* 抬头 */
+.eyebrow{
+  font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+h1{
+  font-size:31px;font-weight:700;letter-spacing:-.022em;line-height:1.28;
+  margin:14px 0 0;max-width:22ch;
+}
+.lede{
+  margin-top:16px;max-width:62ch;font-size:15px;color:var(--ink-2);
+}
+.lede b{color:var(--ink);font-weight:600}
+
+.rule{height:1px;background:var(--rule);margin:38px 0}
+
+/* 共同点 */
+.common{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));
+  gap:22px 30px;
+}
+.common h3{
+  font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:7px;
+}
+.common p{font-size:13.5px;color:var(--ink-2);line-height:1.68}
+.common code{
+  font-family:var(--font-mono);font-size:12px;background:#F2F3F2;
+  border:1px solid var(--rule);border-radius:3px;padding:0 4px;color:var(--ink);
+}
+
+/* 方向卡 */
+.dir{
+  border:1px solid var(--rule);border-radius:8px;background:var(--surface);
+  overflow:hidden;margin-bottom:30px;
+}
+.dir__bar{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 20px;border-bottom:1px solid var(--rule);
+}
+.dir__key{
+  font-family:var(--font-mono);font-size:11px;font-weight:700;
+  color:#fff;border-radius:3px;padding:2px 7px;letter-spacing:.03em;
+}
+.dir__name{font-size:17px;font-weight:700;letter-spacing:-.012em}
+.dir__sub{font-size:12px;color:var(--ink-3);margin-left:auto;font-family:var(--font-mono)}
+
+.dir__grid{display:grid;grid-template-columns:1.45fr 1fr;gap:0}
+@media (max-width:860px){.dir__grid{grid-template-columns:1fr}}
+
+/* 缩略图 */
+.shot{
+  border-right:1px solid var(--rule);background:#EFF0EF;
+  padding:16px;display:flex;flex-direction:column;gap:12px;
+}
+@media (max-width:860px){.shot{border-right:0;border-bottom:1px solid var(--rule)}}
+.shot__frame{
+  position:relative;width:100%;aspect-ratio:16/10;overflow:hidden;
+  border:1px solid var(--rule-2);border-radius:5px;background:#fff;
+  box-shadow:0 2px 10px rgba(0,0,0,.06);
+}
+.shot__frame iframe{
+  position:absolute;top:0;left:0;
+  width:1440px;height:900px;border:0;
+  transform-origin:0 0;
+}
+.shot__cap{
+  display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--ink-3);
+}
+.shot__open{
+  margin-left:auto;font:inherit;font-size:11.5px;font-weight:600;
+  text-decoration:none;color:var(--surface);
+  padding:5px 12px;border-radius:4px;background:var(--ink);
+}
+.shot__open:hover{opacity:.85}
+
+/* 说明 */
+.spec{padding:18px 20px 20px}
+.spec__row{display:flex;gap:12px;margin-bottom:11px}
+.spec__k{
+  font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);width:62px;flex-shrink:0;padding-top:2px;
+}
+.spec__v{font-size:13px;color:var(--ink-2);line-height:1.66;flex:1}
+.spec__v b{color:var(--ink);font-weight:600}
+
+.swatches{display:flex;gap:5px;flex-wrap:wrap}
+.sw{
+  display:flex;align-items:center;gap:5px;
+  font-family:var(--font-mono);font-size:10px;color:var(--ink-3);
+  border:1px solid var(--rule);border-radius:3px;padding:2px 6px 2px 3px;background:var(--surface);
+}
+.sw i{width:13px;height:13px;border-radius:2px;display:block;border:1px solid rgba(0,0,0,.08)}
+
+.type{
+  font-size:12.5px;color:var(--ink-2);
+  border-left:2px solid var(--rule-2);padding-left:9px;margin-top:3px;
+}
+.type em{font-style:normal;color:var(--ink);font-weight:600}
+
+pre.wire{
+  font-family:var(--font-mono);font-size:10.5px;line-height:1.5;
+  color:var(--ink-2);background:#F6F7F6;border:1px solid var(--rule);
+  border-radius:4px;padding:10px 11px;overflow-x:auto;margin-top:4px;
+}
+
+/* 结论 */
+.verdict{
+  border:1px solid var(--rule);border-radius:8px;background:var(--surface);
+  padding:22px 24px;margin-top:8px;
+}
+.verdict h2{font-size:16px;font-weight:700;letter-spacing:-.01em;margin-bottom:12px}
+.verdict ol{margin:0;padding-left:20px}
+.verdict li{font-size:13.5px;color:var(--ink-2);margin-bottom:9px;line-height:1.68}
+.verdict li:last-child{margin-bottom:0}
+.verdict b{color:var(--ink);font-weight:600}
+.verdict code{
+  font-family:var(--font-mono);font-size:12px;background:#F2F3F2;
+  border:1px solid var(--rule);border-radius:3px;padding:0 4px;
+}
+
+.note{
+  margin-top:26px;font-size:12.5px;color:var(--ink-3);
+  border-top:1px solid var(--rule);padding-top:18px;line-height:1.72;
+}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.001ms !important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">LocalRAG · 前端改版方案</div>
+  <h1>三个设计方向，同一份真实语料</h1>
+  <p class="lede">
+    三份稿子回答的是同一个问题：一个本地 RAG 知识库，界面该长什么样才不像默认模板。
+    它们都用你 <code style="font-family:var(--font-mono);font-size:13px">test_docs/</code> 里的真实文档和真实检索参数，
+    都能点、能输入。<b>差别在结构赌注，不在配色深浅。</b>
+  </p>
+
+  <div class="rule"></div>
+
+  <div class="common">
+    <div>
+      <h3>三个方向都做了</h3>
+      <p>浅色底、脱离 antd 默认蓝、去掉 <code>style={{}}</code> 内联样式、建立 token 变量、字号阶梯、键盘焦点可见、尊重 <code>prefers-reduced-motion</code>。</p>
+    </div>
+    <div>
+      <h3>共同的核心主张</h3>
+      <p>引用不再是被丢在气泡底部的灰标签。三份稿子都把<strong>出处、排序和召回来源</strong>当作一等公民 —— 这才是 RAG 界面区别于普通聊天框的地方。</p>
+    </div>
+    <div>
+      <h3>都用真实数据</h3>
+      <p>语料取自 <code>interview-ai-engineer.md</code>、<code>RAG技术入门.md</code>、<code>interview-project-star.md</code>；参数取自你的 <code>top_k=5</code>、<code>retrieval_top_k=20</code>、<code>rerank_threshold=1.0</code>。</p>
+    </div>
+  </div>
+
+  <div class="rule"></div>
+
+  <!-- ============ A ============ -->
+  <section class="dir">
+    <div class="dir__bar">
+      <span class="dir__key" style="background:#14564A">A</span>
+      <span class="dir__name">案卷</span>
+      <span class="dir__sub">Dossier</span>
+    </div>
+
+    <div class="dir__grid">
+      <div class="shot">
+        <div class="shot__frame">
+          <iframe src="a-dossier.html" title="方向 A 案卷 预览" loading="lazy" scrolling="no"></iframe>
+        </div>
+        <div class="shot__cap">
+          <span>三栏 · 右侧常驻证据栏</span>
+          <a class="shot__open" href="a-dossier.html" target="_blank" rel="noopener">打开全屏 ↗</a>
+        </div>
+      </div>
+
+      <div class="spec">
+        <div class="spec__row">
+          <span class="spec__k">主张</span>
+          <span class="spec__v">答案正文里嵌 <b>[1]–[5]</b> 上标，右栏是一列按重排分降序的证据卡。点标记即高亮对应卡片。左栏常驻，切换文档/对话零跳转。</span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">主色</span>
+          <span class="spec__v">
+            <div class="swatches">
+              <span class="sw"><i style="background:#14564A"></i>#14564A</span>
+              <span class="sw"><i style="background:#EAF1EF"></i>#EAF1EF</span>
+              <span class="sw"><i style="background:#F6F7F6"></i>#F6F7F6</span>
+            </div>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">字体</span>
+          <span class="spec__v">
+            <div class="type"><em>答案用衬线</em>（思源宋体 / Songti SC）— 中文长文衬线更耐读，也天然带出「文献」气质。UI 与元数据用无衬线，分数与文件名用等宽。</div>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">签名</span>
+          <span class="spec__v">证据卡的<b>相关度排序条</b>。条长 = 真实重排分归一化，并标出该 chunk 在向量 / BM25 / RRF 三处的原始排名。</span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">布局</span>
+          <span class="spec__v">
+<pre class="wire">┌──────┬────────────┬────────┐
+│ 导航 │  答案       │ 证据   │
+│ 264  │  74ch 上限  │ 372    │
+│      │  [1] 上标   │ ▓▓▓▓ 6.42
+│      │            │ ▓▓▓░ 5.87
+└──────┴────────────┴────────┘</pre>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">风险</span>
+          <span class="spec__v">衬线正文在低分屏上可能偏细；三栏在 1180px 以下要收掉证据栏。</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ B ============ -->
+  <section class="dir">
+    <div class="dir__bar">
+      <span class="dir__key" style="background:#22262B">B</span>
+      <span class="dir__name">流程</span>
+      <span class="dir__sub">Pipeline</span>
+    </div>
+
+    <div class="dir__grid">
+      <div class="shot">
+        <div class="shot__frame">
+          <iframe src="b-pipeline.html" title="方向 B 流程 预览" loading="lazy" scrolling="no"></iframe>
+        </div>
+        <div class="shot__cap">
+          <span>窄导航 + 顶部流水线，证据内联在答案下方</span>
+          <a class="shot__open" href="b-pipeline.html" target="_blank" rel="noopener">打开全屏 ↗</a>
+        </div>
+      </div>
+
+      <div class="spec">
+        <div class="spec__row">
+          <span class="spec__k">主张</span>
+          <span class="spec__v">把检索流水线本身做成界面。顶部五个阶段各显示<b>耗时与命中数</b>，点开能看该阶段的候选与<b>排名变化</b>（↑1 / ↓5）。</span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">主色</span>
+          <span class="spec__v">
+            <div class="swatches">
+              <span class="sw"><i style="background:#22262B"></i>#22262B</span>
+              <span class="sw"><i style="background:#B45309"></i>#B45309</span>
+              <span class="sw"><i style="background:#F4F5F6"></i>#F4F5F6</span>
+            </div>
+            <div style="font-size:12px;color:var(--ink-3);margin-top:6px">琥珀<b>只</b>表示「检索相关度 / 命中」，不做装饰。按钮一律石墨。</div>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">字体</span>
+          <span class="spec__v">
+            <div class="type"><em>全部无衬线 + 大量等宽</em>。13.5px / 行高 1.78，密度最高。分数、排名、耗时、文件名全走等宽等宽数字（tabular-nums）。</div>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">签名</span>
+          <span class="spec__v"><b>可展开的检索流水线</b>。这是把你的 <code>query_rewrite → 向量20 + BM25 20 → RRF → rerank → top5</code> 直接变成可读界面。</span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">布局</span>
+          <span class="spec__v">
+<pre class="wire">┌────┬──────────────────────────┐
+│ 206│ 改写3 ▸ 向量20 +BM25 20 ▸ │
+│    │ RRF32 ▸ 精排5      2.26s │
+│    ├──────────────────────────┤
+│    │ 你 │ 问题                │
+│    │ 回答│ 答案 + [1] 上标     │
+│    │    │ ┌证据┐┌证据┐┌证据┐   │
+└────┴──────────────────────────┘</pre>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">风险</span>
+          <span class="spec__v">信息量最大，第一次用需要解释成本；阶段面板会占掉垂直空间。</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ C ============ -->
+  <section class="dir">
+    <div class="dir__bar">
+      <span class="dir__key" style="background:#8E2F3C">C</span>
+      <span class="dir__name">校勘</span>
+      <span class="dir__sub">Collation</span>
+    </div>
+
+    <div class="dir__grid">
+      <div class="shot">
+        <div class="shot__frame">
+          <iframe src="c-collation.html" title="方向 C 校勘 预览" loading="lazy" scrolling="no"></iframe>
+        </div>
+        <div class="shot__cap">
+          <span>无气泡 · 文档式排版 · 批注跟随滚动</span>
+          <a class="shot__open" href="c-collation.html" target="_blank" rel="noopener">打开全屏 ↗</a>
+        </div>
+      </div>
+
+      <div class="spec">
+        <div class="spec__row">
+          <span class="spec__k">主张</span>
+          <span class="spec__v"><b>放弃聊天气泡。</b>答案按文献排版，正文是无气泡的文档流，右栏证据<b>按段落分组</b>。滚到哪一段，右栏就亮哪一组。</span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">主色</span>
+          <span class="spec__v">
+            <div class="swatches">
+              <span class="sw"><i style="background:#8E2F3C"></i>#8E2F3C</span>
+              <span class="sw"><i style="background:#FAF2F3"></i>#FAF2F3</span>
+              <span class="sw"><i style="background:#22262B"></i>#22262B</span>
+            </div>
+            <div style="font-size:12px;color:var(--ink-3);margin-top:6px">绛色<b>只</b>用于引用与批注（朱笔校勘），按钮与交互一律石墨。</div>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">字体</span>
+          <span class="spec__v">
+            <div class="type"><em>无衬线 + 强字重对比</em>。标题 700 紧字距，正文 400 行高 1.9，小标签用 700 大写 + 0.13em 字距。靠字重和字距拉层级，不靠颜色。</div>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">签名</span>
+          <span class="spec__v"><b>书脊 + 逐段批注</b>。正文左侧一条竖线，每段有刻度和 <code>¶n</code> 编号，右栏同号分组，中间有连接短线。滚动用 <code>IntersectionObserver</code> 自动联动。</span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">布局</span>
+          <span class="spec__v">
+<pre class="wire">┌────┬──────────────┬──────────┐
+│ 188│ ¶1 ─────────  │ ¶1 缺口  │
+│    │ ¶2 ─────────  │ ¶2 ▓6.42 │
+│    │ ¶3 ─────────  │    ▓4.11 │
+│    │ ¶4 ─────────  │ ¶3 ▓1.24 │
+│    │ 64ch 文档流   │ ¶4 复引  │
+└────┴──────────────┴──────────┘</pre>
+          </span>
+        </div>
+        <div class="spec__row">
+          <span class="spec__k">风险</span>
+          <span class="spec__v">最大的赌注 —— 老用户可能觉得「对话感」消失了。多轮追问的呈现方式需要再设计（稿子里先用了引文块）。</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 结论 ============ -->
+  <div class="verdict">
+    <h2>怎么选</h2>
+    <ol>
+      <li><b>想要最稳的一步到位：选 A。</b>三栏结构和你现在的布局最接近，改动风险最低，但视觉语言完全换掉了。衬线正文是这个方案里唯一需要你点头的赌注。</li>
+      <li><b>想强调「这是个技术工具」：选 B。</b>信息密度最高，检索流水线直接变成卖点。适合你自己天天用，也适合放进面试作品集讲。</li>
+      <li><b>想做得最不一样：选 C。</b>把问答当读文献，气质最独特。代价是交互习惯改动最大。</li>
+      <li><b>也可以取交集。</b>比如：A 的三栏 + B 的流水线状态条 + C 的段落批注联动。三个签名并不互斥，我可以在落地时合成一版。</li>
+    </ol>
+    <p style="margin-top:14px;font-size:13.5px;color:var(--ink-2)">
+      选定后我会把它落成真实代码：在 <code>ConfigProvider</code> 建一套 <code>theme.token</code>，
+      用 <code>theme.useToken()</code> 替换掉那 108 处内联样式，顺手修掉 <code>DocumentList.tsx:438</code>
+      的 <code>#1890ff</code> 残留和浅色界面里嵌 <code>oneDark</code> 代码块的问题。
+    </p>
+  </div>
+
+  <p class="note">
+    三份稿子都是单文件静态 HTML，无外部依赖、无网络请求，直接双击即可打开。
+    稿子里的交互（点引用、点阶段、滚动跟随、输入回车）都是可用的，方便你判断手感而不只是看外观。
+  </p>
+
+</div>
+
+<script>
+/* 缩略图按容器宽度等比缩放 1440×900 的 iframe */
+(function(){
+  var BASE_W = 1440, BASE_H = 900;
+  function fit(){
+    document.querySelectorAll('.shot__frame').forEach(function(frame){
+      var w = frame.clientWidth;
+      var s = w / BASE_W;
+      var ifr = frame.querySelector('iframe');
+      if (!ifr) return;
+      ifr.style.transform = 'scale(' + s + ')';
+      ifr.style.width  = BASE_W + 'px';
+      ifr.style.height = Math.round(frame.clientHeight / s) + 'px';
+    });
+  }
+  window.addEventListener('resize', fit);
+  window.addEventListener('load', fit);
+  fit();
+})();
+</script>
+</body>
+</html>

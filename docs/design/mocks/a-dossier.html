@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>方向 A · 案卷 — LocalRAG 设计稿</title>
+<style>
+/* ============================================================
+   方向 A「案卷」 Direction A — Dossier
+   主色 松墨绿 #14564A ｜ 答案正文用衬线 ｜ 签名：证据卡排序条
+   论点：RAG 界面的主角是「出处与排序」，不是聊天气泡。
+   ============================================================ */
+
+:root{
+  --paper:#F6F7F6;
+  --surface:#FFFFFF;
+  --surface-2:#FBFCFB;
+
+  --ink:#141A1C;
+  --ink-2:#4C585C;
+  --ink-3:#89959A;
+
+  --rule:#E4E7E5;
+  --rule-2:#D2D7D4;
+
+  --pine:#14564A;
+  --pine-ink:#0E3D34;
+  --pine-soft:#EAF1EF;
+  --pine-line:#A9C4BD;
+
+  --amber:#8A6A12;
+
+  --r:6px;
+  --font-ui:"Inter","PingFang SC","Microsoft YaHei","Source Han Sans SC",system-ui,-apple-system,sans-serif;
+  --font-read:"Source Han Serif SC","Noto Serif SC","Songti SC","SimSun",Georgia,serif;
+  --font-mono:"JetBrains Mono","Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+html,body{height:100%}
+body{
+  font-family:var(--font-ui);
+  font-size:14px;
+  color:var(--ink);
+  background:var(--paper);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+:focus-visible{outline:2px solid var(--pine);outline-offset:2px;border-radius:2px}
+
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* ---------- 组件原子 ---------- */
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.eyebrow{
+  font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+.btn{
+  font:inherit;font-size:13px;color:var(--ink-2);
+  background:var(--surface);border:1px solid var(--rule-2);border-radius:var(--r);
+  padding:6px 11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+  transition:background .12s,border-color .12s,color .12s;
+}
+.btn:hover{background:var(--surface-2);border-color:var(--pine-line);color:var(--pine-ink)}
+.btn--primary{background:var(--pine);border-color:var(--pine);color:#fff;font-weight:500}
+.btn--primary:hover{background:var(--pine-ink);border-color:var(--pine-ink);color:#fff}
+.btn--ghost{background:transparent;border-color:transparent}
+.btn--ghost:hover{background:var(--pine-soft);border-color:transparent}
+
+/* ============================================================
+   1. 左侧导航
+   ============================================================ */
+.nav{
+  width:264px;flex-shrink:0;
+  background:var(--surface);
+  border-right:1px solid var(--rule);
+  display:flex;flex-direction:column;
+}
+.nav__brand{
+  display:flex;align-items:baseline;gap:7px;
+  padding:15px 16px 13px;border-bottom:1px solid var(--rule);
+}
+.nav__mark{
+  font-family:var(--font-read);font-size:19px;font-weight:700;
+  color:var(--pine);line-height:1;
+}
+.nav__word{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.nav__sub{font-size:10px;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin-left:auto}
+
+/* 知识库切换 */
+.kb{
+  display:flex;align-items:center;gap:8px;
+  margin:10px 12px 0;padding:8px 9px;
+  border:1px solid var(--rule);border-radius:var(--r);
+  background:var(--surface-2);cursor:pointer;text-align:left;font:inherit;
+}
+.kb:hover{border-color:var(--pine-line)}
+.kb__dot{width:6px;height:6px;border-radius:50%;background:var(--pine);flex-shrink:0}
+.kb__name{font-size:12.5px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kb__count{font-size:10.5px;color:var(--ink-3)}
+.kb__caret{color:var(--ink-3);font-size:9px}
+
+/* 分段标签页 */
+.tabs{display:flex;gap:2px;padding:10px 12px 0}
+.tab{
+  flex:1;font:inherit;font-size:12px;font-weight:500;color:var(--ink-3);
+  background:transparent;border:0;border-bottom:1.5px solid transparent;
+  padding:6px 2px 7px;cursor:pointer;transition:color .12s,border-color .12s;
+}
+.tab:hover{color:var(--ink-2)}
+.tab[aria-selected="true"]{color:var(--pine);border-bottom-color:var(--pine)}
+
+.nav__scroll{flex:1;overflow-y:auto;padding:12px}
+.nav__scroll::-webkit-scrollbar{width:8px}
+.nav__scroll::-webkit-scrollbar-thumb{background:var(--rule-2);border-radius:4px;border:2px solid var(--surface)}
+.nav__scroll::-webkit-scrollbar-track{background:transparent}
+
+.nav__new{
+  width:100%;justify-content:center;margin-bottom:10px;
+}
+
+.grouplabel{
+  display:flex;align-items:center;gap:8px;
+  padding:9px 6px 5px;
+}
+.grouplabel::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+/* 对话条目 */
+.conv{
+  display:block;width:100%;text-align:left;font:inherit;
+  padding:8px 10px;border-radius:var(--r);cursor:pointer;
+  border:1px solid transparent;background:transparent;
+  transition:background .12s,border-color .12s;
+}
+.conv:hover{background:var(--surface-2);border-color:var(--rule)}
+.conv[aria-current="true"]{background:var(--pine-soft);border-color:var(--pine-line)}
+.conv__title{
+  font-size:12.5px;line-height:1.45;color:var(--ink);
+  display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.conv[aria-current="true"] .conv__title{color:var(--pine-ink);font-weight:500}
+.conv__meta{
+  display:flex;gap:7px;align-items:center;margin-top:3px;
+  font-size:10.5px;color:var(--ink-3);
+}
+.conv__tag{
+  font-size:10px;color:var(--pine-ink);background:var(--pine-soft);
+  padding:1px 5px;border-radius:3px;letter-spacing:.02em;
+}
+
+.nav__foot{
+  border-top:1px solid var(--rule);padding:9px 12px;
+  display:flex;align-items:center;gap:9px;
+}
+.avatar{
+  width:22px;height:22px;border-radius:50%;flex-shrink:0;
+  background:var(--pine);color:#fff;
+  display:grid;place-items:center;font-size:10.5px;font-weight:600;
+}
+.nav__user{flex:1;font-size:12px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ============================================================
+   2. 中间对话栏
+   ============================================================ */
+.thread{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--surface)}
+
+.thread__head{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 22px;border-bottom:1px solid var(--rule);
+  background:var(--surface);flex-shrink:0;
+}
+.thread__title{font-size:13.5px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thread__pipeline{
+  display:flex;align-items:center;gap:7px;
+  font-size:10.5px;color:var(--ink-3);
+}
+.pipe__step{display:flex;align-items:center;gap:4px}
+.pipe__step b{font-family:var(--font-mono);font-weight:500;color:var(--ink-2)}
+.pipe__arrow{color:var(--rule-2)}
+
+.thread__body{
+  flex:1;overflow-y:auto;padding:26px 22px 8px;
+}
+.thread__body::-webkit-scrollbar{width:9px}
+.thread__body::-webkit-scrollbar-thumb{background:var(--rule-2);border-radius:5px;border:2px solid var(--surface)}
+.thread__body::-webkit-scrollbar-track{background:transparent}
+
+.well{max-width:74ch;margin:0 auto}
+
+/* 用户轮次 */
+.turn-user{
+  display:flex;gap:11px;justify-content:flex-end;
+  margin-bottom:26px;
+}
+.turn-user__bubble{
+  max-width:60ch;background:var(--pine-soft);
+  border:1px solid var(--pine-line);border-radius:var(--r);
+  padding:9px 13px;font-size:13.5px;line-height:1.65;color:var(--pine-ink);
+}
+
+/* 助手轮次 */
+.turn-ai{margin-bottom:30px}
+.turn-ai__head{
+  display:flex;align-items:center;gap:9px;margin-bottom:11px;
+}
+.turn-ai__who{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+.turn-ai__rule{flex:1;height:1px;background:var(--rule)}
+.turn-ai__stats{font-size:10.5px;color:var(--ink-3)}
+
+.answer{
+  font-family:var(--font-read);
+  font-size:15.5px;line-height:1.92;color:var(--ink);
+  letter-spacing:.005em;
+}
+.answer p{margin-bottom:15px}
+.answer p:last-child{margin-bottom:0}
+.answer strong{font-weight:700;color:var(--pine-ink)}
+.answer code{
+  font-family:var(--font-mono);font-size:.83em;
+  background:var(--surface-2);border:1px solid var(--rule);
+  padding:1px 5px;border-radius:3px;color:var(--pine-ink);
+}
+
+/* 内联引用标记 —— 本方向的签名之一 */
+.cite{
+  font-family:var(--font-mono);font-size:10.5px;font-weight:600;
+  color:var(--pine);background:var(--pine-soft);
+  border:1px solid var(--pine-line);border-radius:3px;
+  padding:0 4px;margin:0 2px;cursor:pointer;
+  vertical-align:super;line-height:1.5;
+  transition:background .12s,color .12s;
+}
+.cite:hover{background:var(--pine);color:#fff;border-color:var(--pine)}
+.cite[data-active="true"]{background:var(--pine);color:#fff;border-color:var(--pine)}
+
+/* 组合器 */
+.composer{
+  flex-shrink:0;border-top:1px solid var(--rule);
+  padding:13px 22px 15px;background:var(--surface);
+}
+.composer__inner{max-width:74ch;margin:0 auto}
+.composer__box{
+  display:flex;gap:9px;align-items:flex-end;
+  border:1px solid var(--rule-2);border-radius:var(--r);
+  background:var(--surface);padding:9px 10px;
+  transition:border-color .12s,box-shadow .12s;
+}
+.composer__box:focus-within{border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft)}
+.composer__box textarea{
+  flex:1;font:inherit;font-size:13.5px;line-height:1.6;color:var(--ink);
+  border:0;background:transparent;resize:none;outline:none;
+  min-height:22px;max-height:110px;
+}
+.composer__box textarea::placeholder{color:var(--ink-3)}
+.iconbtn{
+  width:28px;height:28px;flex-shrink:0;border-radius:var(--r);
+  border:1px solid transparent;background:transparent;cursor:pointer;
+  color:var(--ink-3);display:grid;place-items:center;font-size:14px;
+  transition:background .12s,color .12s;
+}
+.iconbtn:hover{background:var(--surface-2);color:var(--ink-2)}
+.iconbtn[aria-pressed="true"]{background:var(--pine-soft);color:var(--pine);border-color:var(--pine-line)}
+.composer__hint{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-top:9px;font-size:11px;color:var(--ink-2);
+}
+.composer__hint kbd{
+  font-family:var(--font-mono);font-size:10px;
+  border:1px solid var(--rule-2);border-bottom-width:2px;border-radius:3px;
+  padding:0 4px;background:var(--surface-2);color:var(--ink-2);
+}
+
+/* ============================================================
+   3. 右侧证据栏 —— 签名元素
+   ============================================================ */
+.evidence{
+  width:372px;flex-shrink:0;
+  background:var(--surface-2);
+  border-left:1px solid var(--rule);
+  display:flex;flex-direction:column;
+}
+.evidence__head{
+  padding:13px 16px 11px;border-bottom:1px solid var(--rule);
+  display:flex;align-items:baseline;gap:8px;
+}
+.evidence__title{font-size:12.5px;font-weight:600}
+.evidence__sub{font-size:10.5px;color:var(--ink-3);margin-left:auto}
+
+.evidence__body{flex:1;overflow-y:auto;padding:12px}
+.evidence__body::-webkit-scrollbar{width:8px}
+.evidence__body::-webkit-scrollbar-thumb{background:var(--rule-2);border-radius:4px;border:2px solid var(--surface-2)}
+.evidence__body::-webkit-scrollbar-track{background:transparent}
+
+.card{
+  background:var(--surface);border:1px solid var(--rule);
+  border-radius:var(--r);padding:13px 14px;margin-bottom:10px;
+  cursor:pointer;transition:border-color .14s,box-shadow .14s,transform .14s;
+  scroll-margin-top:12px;
+}
+.card:hover{border-color:var(--pine-line)}
+.card[data-active="true"]{
+  border-color:var(--pine);
+  box-shadow:0 0 0 3px var(--pine-soft);
+}
+
+.card__top{display:flex;align-items:flex-start;gap:9px;margin-bottom:9px}
+.card__num{
+  font-family:var(--font-mono);font-size:10.5px;font-weight:600;
+  color:var(--pine);background:var(--pine-soft);
+  border:1px solid var(--pine-line);border-radius:3px;
+  min-width:19px;height:17px;padding:0 3px;
+  display:grid;place-items:center;flex-shrink:0;margin-top:1px;
+}
+.card__file{
+  font-family:var(--font-mono);font-size:12px;color:var(--ink);
+  line-height:1.4;word-break:break-all;flex:1;
+}
+.card__loc{font-size:10.5px;color:var(--ink-3);margin-top:3px;letter-spacing:.02em}
+
+/* 相关度排序条 —— 真实 rerank 分数的归一化长度 */
+.score{display:flex;align-items:center;gap:8px;margin-bottom:11px}
+.score__track{
+  flex:1;height:5px;background:var(--rule-2);border-radius:3px;overflow:hidden;
+}
+.score__fill{height:100%;background:var(--pine);border-radius:3px;transition:width .4s ease}
+.score__val{
+  font-family:var(--font-mono);font-size:12.5px;font-weight:700;
+  color:var(--pine);min-width:38px;text-align:right;
+}
+.score__label{font-size:10px;font-weight:600;color:var(--ink-2);letter-spacing:.05em}
+
+/* 双路召回溯源 */
+.route{
+  display:flex;flex-wrap:wrap;gap:5px;margin-bottom:11px;
+}
+.route span{
+  font-family:var(--font-mono);font-size:10.5px;font-weight:500;color:var(--ink);
+  border:1px solid var(--rule-2);border-radius:3px;padding:1px 5px;
+  background:var(--surface-2);
+}
+.route span b{color:var(--pine-ink);font-weight:700}
+
+.card__snippet{
+  font-size:12.5px;line-height:1.8;color:var(--ink-2);
+  border-left:2px solid var(--rule-2);padding-left:10px;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+}
+.card__snippet mark{background:#FBF3D4;color:var(--ink);padding:0 2px;border-radius:2px}
+
+.evidence__foot{
+  border-top:1px solid var(--rule);padding:9px 16px;
+  font-size:10.5px;color:var(--ink-3);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.evidence__foot b{font-family:var(--font-mono);color:var(--ink-2);font-weight:600}
+
+/* 空态 / 提示 */
+.empty{text-align:center;color:var(--ink-3);font-size:13px;padding:80px 20px}
+
+/* 移动端 */
+.mobilebar{display:none}
+@media (max-width:1180px){
+  .evidence{display:none}
+}
+@media (max-width:860px){
+  .nav{display:none}
+  .mobilebar{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 14px;border-bottom:1px solid var(--rule);
+  }
+  .thread__head{display:none}
+  .thread__body{padding:18px 14px 8px}
+  .composer{padding:11px 14px 13px}
+  .answer{font-size:15px;line-height:1.85}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition-duration:.001ms !important;animation-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ================= 左侧导航 ================= -->
+  <nav class="nav" aria-label="主导航">
+    <div class="nav__brand">
+      <span class="nav__mark">L</span>
+      <span class="nav__word">LocalRAG</span>
+      <span class="nav__sub">本地</span>
+    </div>
+
+    <button class="kb" type="button">
+      <span class="kb__dot"></span>
+      <span class="kb__name">面试知识库</span>
+      <span class="kb__count mono">24</span>
+      <span class="kb__caret">▼</span>
+    </button>
+
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="conversations">对话</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="documents">文档</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="settings">设置</button>
+    </div>
+
+    <div class="nav__scroll">
+      <button class="btn nav__new" type="button">
+        <span aria-hidden="true">＋</span> 新对话
+      </button>
+
+      <div class="grouplabel"><span class="eyebrow">今天</span></div>
+
+      <a class="conv" href="#" aria-current="true">
+        <span class="conv__title">RAG 为什么要做混合检索</span>
+        <span class="conv__meta"><span class="mono">5 条引用</span></span>
+      </a>
+      <a class="conv" href="#">
+        <span class="conv__title">BM25 和向量检索怎么融合</span>
+        <span class="conv__meta"><span class="mono">3 条引用</span></span>
+      </a>
+      <a class="conv" href="#">
+        <span class="conv__title">rerank_threshold 调到多少合适</span>
+        <span class="conv__meta"><span class="mono">4 条引用</span></span>
+      </a>
+      <a class="conv" href="#">
+        <span class="conv__title">chunk_size 取 500 的依据</span>
+        <span class="conv__meta"><span class="mono">2 条引用</span></span>
+      </a>
+
+      <div class="grouplabel"><span class="eyebrow">本周</span></div>
+
+      <a class="conv" href="#">
+        <span class="conv__title">HTTP 3xx 重定向语义整理</span>
+        <span class="conv__meta"><span class="mono">3 条引用</span><span class="conv__tag">速查表</span></span>
+      </a>
+      <a class="conv" href="#">
+        <span class="conv__title">Git rebase 和 merge 的区别</span>
+        <span class="conv__meta"><span class="mono">2 条引用</span></span>
+      </a>
+      <a class="conv" href="#">
+        <span class="conv__title">Python GIL 对多线程的实际影响</span>
+        <span class="conv__meta"><span class="mono">4 条引用</span></span>
+      </a>
+      <a class="conv" href="#">
+        <span class="conv__title">MySQL 索引失效的常见场景</span>
+        <span class="conv__meta"><span class="mono">5 条引用</span></span>
+      </a>
+      <a class="conv" href="#">
+        <span class="conv__title">测试开发面试会问哪些自动化框架</span>
+        <span class="conv__meta"><span class="mono">6 条引用</span></span>
+      </a>
+    </div>
+
+    <div class="nav__foot">
+      <span class="avatar">H</span>
+      <span class="nav__user">haoyu</span>
+      <button class="btn btn--ghost" type="button" title="退出">退出</button>
+    </div>
+  </nav>
+
+  <!-- ================= 中间对话栏 ================= -->
+  <main class="thread">
+
+    <div class="mobilebar">
+      <button class="btn btn--ghost" type="button" aria-label="打开导航">☰</button>
+      <span class="nav__word">LocalRAG</span>
+    </div>
+
+    <header class="thread__head">
+      <h1 class="thread__title">RAG 为什么要做混合检索</h1>
+      <div class="thread__pipeline">
+        <span class="pipe__step">改写 <b>3</b></span>
+        <span class="pipe__arrow">→</span>
+        <span class="pipe__step">召回 <b>20+20</b></span>
+        <span class="pipe__arrow">→</span>
+        <span class="pipe__step">RRF</span>
+        <span class="pipe__arrow">→</span>
+        <span class="pipe__step">精排 <b>5</b></span>
+        <span class="pipe__arrow">·</span>
+        <span class="pipe__step mono">2.4s</span>
+      </div>
+    </header>
+
+    <div class="thread__body" id="threadBody">
+      <div class="well">
+
+        <!-- 用户 -->
+        <div class="turn-user">
+          <div class="turn-user__bubble">
+            我的本地 RAG 为什么要做混合检索？只用向量检索不行吗？
+          </div>
+        </div>
+
+        <!-- 助手 -->
+        <article class="turn-ai">
+          <div class="turn-ai__head">
+            <span class="turn-ai__who">回答</span>
+            <span class="turn-ai__rule"></span>
+            <span class="turn-ai__stats mono">5 条引用 · 1.9s</span>
+          </div>
+
+          <div class="answer" id="answer">
+            <p>
+              只用向量检索在中文语料上会稳定地漏掉专有名词。混合检索的价值，就是补上这个缺口。
+            </p>
+
+            <p>
+              向量检索靠语义相似度匹配，擅长「意思相近但用词不同」的情况。但当问题里出现
+              <code>RRF</code>、<code>bge-reranker-v2-m3</code>、<code>chromadb</code>
+              这类低频专有名词时，语义向量往往把它们糊成一个模糊的「算法相关」概念，导致本该命中的
+              chunk 排不进前 20。<button class="cite" data-cite="1" type="button">1</button>
+            </p>
+
+            <p>
+              补上 BM25 之后，两路各自召回 20 条，再用 RRF（Reciprocal Rank Fusion）按排名倒数加权融合。
+              RRF 的好处是不必归一化两路的分数量纲 —— 向量用余弦距离、BM25 用 TF-IDF 加权，本来不可比，
+              融合<strong>排名</strong>比融合<strong>分数</strong>更稳。<button class="cite" data-cite="2" type="button">2</button><button class="cite" data-cite="3" type="button">3</button>
+            </p>
+
+            <p>
+              融合完还要过一遍 <code>bge-reranker-v2-m3</code> 精排。RRF 只负责把候选池排个序，
+              交叉编码器则拿「问题 + chunk」成对过一遍模型，判断力强得多；代价是 O(n) 次前向推理，
+              所以只能用在已经收窄到 20 条的候选集上。<button class="cite" data-cite="5" type="button">5</button>
+            </p>
+
+            <p>
+              一句话：<strong>双路召回负责「不漏」，RRF 负责「可比」，reranker 负责「排准」。</strong><button class="cite" data-cite="4" type="button">4</button>
+            </p>
+          </div>
+        </article>
+
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer__inner">
+        <div class="composer__box">
+          <button class="iconbtn" type="button" title="上传图片">▣</button>
+          <button class="iconbtn" type="button" title="深度思考" aria-pressed="false">◐</button>
+          <textarea id="input" rows="1" placeholder="接着问…"></textarea>
+          <button class="btn btn--primary" type="button" id="send">发送</button>
+        </div>
+        <div class="composer__hint">
+          <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</span>
+          <span class="mono">检索 24 份文档 · 316 chunks</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ================= 右侧证据栏 ================= -->
+  <aside class="evidence" aria-label="引用证据">
+    <div class="evidence__head">
+      <span class="evidence__title">证据</span>
+      <span class="evidence__sub mono">按重排分降序</span>
+    </div>
+
+    <div class="evidence__body" id="evidenceBody">
+
+      <!-- 1 -->
+      <article class="card" data-cite="1" tabindex="0">
+        <div class="card__top">
+          <span class="card__num">1</span>
+          <div style="flex:1;min-width:0">
+            <div class="card__file">interview-ai-engineer.md</div>
+            <div class="card__loc">Q12 如何优化 RAG 检索效果</div>
+          </div>
+        </div>
+        <div class="score">
+          <span class="score__label">重排</span>
+          <span class="score__track"><span class="score__fill" style="width:100%"></span></span>
+          <span class="score__val">6.42</span>
+        </div>
+        <div class="route">
+          <span>向量 <b>#3</b></span><span>BM25 <b>#1</b></span><span>RRF <b>#2</b></span>
+        </div>
+        <p class="card__snippet">
+          <strong>2. 混合检索</strong><br>
+          向量检索（语义相似） + BM25检索（关键词匹配） → RRF融合
+        </p>
+      </article>
+
+      <!-- 2 -->
+      <article class="card" data-cite="2" tabindex="0">
+        <div class="card__top">
+          <span class="card__num">2</span>
+          <div style="flex:1;min-width:0">
+            <div class="card__file">RAG技术入门.md</div>
+            <div class="card__loc">最佳实践 · 第 4 条</div>
+          </div>
+        </div>
+        <div class="score">
+          <span class="score__label">重排</span>
+          <span class="score__track"><span class="score__fill" style="width:91%"></span></span>
+          <span class="score__val">5.87</span>
+        </div>
+        <div class="route">
+          <span>向量 <b>#1</b></span><span>BM25 <b>#5</b></span><span>RRF <b>#1</b></span>
+        </div>
+        <p class="card__snippet">
+          <strong>4. 混合检索</strong>：结合向量检索和关键词检索（BM25），提升<mark>专有名词</mark>的检索效果
+        </p>
+      </article>
+
+      <!-- 3 -->
+      <article class="card" data-cite="3" tabindex="0">
+        <div class="card__top">
+          <span class="card__num">3</span>
+          <div style="flex:1;min-width:0">
+            <div class="card__file">interview-project-star.md</div>
+            <div class="card__loc">项目经历 · 检索模块</div>
+          </div>
+        </div>
+        <div class="score">
+          <span class="score__label">重排</span>
+          <span class="score__track"><span class="score__fill" style="width:64%"></span></span>
+          <span class="score__val">4.11</span>
+        </div>
+        <div class="route">
+          <span>向量 <b>#7</b></span><span>BM25 <b>#2</b></span><span>RRF <b>#4</b></span>
+        </div>
+        <p class="card__snippet">
+          实现混合检索策略：向量检索 + BM25检索，通过 <mark>RRF 算法融合</mark>结果
+        </p>
+      </article>
+
+      <!-- 4 -->
+      <article class="card" data-cite="4" tabindex="0">
+        <div class="card__top">
+          <span class="card__num">4</span>
+          <div style="flex:1;min-width:0">
+            <div class="card__file">interview-project-qa.md</div>
+            <div class="card__loc">项目追问 · 检索后处理</div>
+          </div>
+        </div>
+        <div class="score">
+          <span class="score__label">重排</span>
+          <span class="score__track"><span class="score__fill" style="width:37%"></span></span>
+          <span class="score__val">2.36</span>
+        </div>
+        <div class="route">
+          <span>向量 <b>#11</b></span><span>BM25 <b>#9</b></span><span>RRF <b>#8</b></span>
+        </div>
+        <p class="card__snippet">
+          <strong>后处理</strong>：对检索结果进行 <mark>Rerank 重排序</mark>，过滤低质量结果
+        </p>
+      </article>
+
+      <!-- 5 -->
+      <article class="card" data-cite="5" tabindex="0">
+        <div class="card__top">
+          <span class="card__num">5</span>
+          <div style="flex:1;min-width:0">
+            <div class="card__file">interview-ai-engineer.md</div>
+            <div class="card__loc">Q12 · Rerank 重排序</div>
+          </div>
+        </div>
+        <div class="score">
+          <span class="score__label">重排</span>
+          <span class="score__track"><span class="score__fill" style="width:19%"></span></span>
+          <span class="score__val">1.24</span>
+        </div>
+        <div class="route">
+          <span>向量 <b>#14</b></span><span>BM25 <b>#6</b></span><span>RRF <b>#11</b></span>
+        </div>
+        <p class="card__snippet">
+          <strong>3. Rerank重排序</strong>　用<mark>交叉编码器</mark>对检索结果重新排序　过滤低质量结果（设置阈值）
+        </p>
+      </article>
+
+    </div>
+
+    <div class="evidence__foot">
+      <span>阈值 <b>1.0</b> 以上保留</span>
+      <span class="mono">bge-reranker-v2-m3</span>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+(function(){
+  var cards  = Array.prototype.slice.call(document.querySelectorAll('.card'));
+  var cites  = Array.prototype.slice.call(document.querySelectorAll('.cite'));
+  var body   = document.getElementById('evidenceBody');
+
+  function activate(n, scroll){
+    cards.forEach(function(c){
+      c.setAttribute('data-active', String(c.dataset.cite === n));
+    });
+    cites.forEach(function(c){
+      c.setAttribute('data-active', String(c.dataset.cite === n));
+    });
+    if (scroll){
+      var card = document.querySelector('.card[data-cite="' + n + '"]');
+      if (card) card.scrollIntoView({block:'nearest', behavior:'smooth'});
+    }
+  }
+
+  cites.forEach(function(c){
+    c.addEventListener('click', function(){ activate(c.dataset.cite, true); });
+  });
+
+  cards.forEach(function(card){
+    card.addEventListener('click', function(){ activate(card.dataset.cite, false); });
+    card.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); activate(card.dataset.cite, false); }
+    });
+  });
+
+  /* 标签页 */
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t){
+    t.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){
+        x.setAttribute('aria-selected', String(x === t));
+      });
+    });
+  });
+
+  /* 对话切换 */
+  Array.prototype.forEach.call(document.querySelectorAll('.conv'), function(c){
+    c.addEventListener('click', function(e){
+      e.preventDefault();
+      Array.prototype.forEach.call(document.querySelectorAll('.conv'), function(x){
+        x.setAttribute('aria-current', String(x === c));
+      });
+    });
+  });
+
+  /* 输入框 */
+  var input = document.getElementById('input');
+  var thread = document.getElementById('threadBody');
+  var well = document.querySelector('.well');
+
+  function send(){
+    var v = input.value.trim();
+    if (!v) return;
+    var div = document.createElement('div');
+    div.className = 'turn-user';
+    var b = document.createElement('div');
+    b.className = 'turn-user__bubble';
+    b.textContent = v;
+    div.appendChild(b);
+    well.appendChild(div);
+    input.value = '';
+    input.style.height = 'auto';
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  document.getElementById('send').addEventListener('click', send);
+  input.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  input.addEventListener('input', function(){
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 110) + 'px';
+  });
+
+  /* 深度思考开关 */
+  var think = document.querySelector('.iconbtn[aria-pressed]');
+  think.addEventListener('click', function(){
+    think.setAttribute('aria-pressed', String(think.getAttribute('aria-pressed') !== 'true'));
+  });
+})();
+</script>
+</body>
+</html>
