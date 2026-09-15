@@ -41,7 +41,8 @@ chromadb/
 
 # Local dev files (not for public release)
 plans/
+.worktrees/
+.runtime/
 start.bat
 初版方案.md
 .claude/
-
