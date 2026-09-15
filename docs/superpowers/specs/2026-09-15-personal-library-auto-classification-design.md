@@ -1,7 +1,7 @@
 # LocalRAG 个人总库自动编目设计
 
 > 日期：2026-09-15
-> 状态：已完成交互设计确认，等待书面审阅
+> 状态：已完成交互设计与书面审阅，2026-09-15 通过
 > 范围：个人总库、LLM 自动分类、标签与摘要、分类侧栏、故障兜底
 
 ## 1. 背景
@@ -99,7 +99,7 @@ LocalRAG 已支持多格式文档解析、分块、向量化、知识库、标�
 
 - `category_id`，可空外键
 - `classification_status`：`pending | running | completed | fallback | failed`
-- `classification_method`：`llm | embedding | none`
+- `classification_method`：`llm | embedding | user | none`
 - `classification_confidence`
 - `classification_version`
 - `classification_error`，只保存脱敏错误摘要
