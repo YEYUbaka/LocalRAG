@@ -6,7 +6,9 @@ rejects revision drift.
 """
 
 import importlib.util
+import inspect
 from pathlib import Path
+import re
 
 import pytest
 from sqlalchemy import Boolean, DateTime, Enum, Float, Integer, JSON, String, Text, UniqueConstraint
@@ -226,3 +228,19 @@ def test_migration_contains_data_preservation_and_downgrade_guards():
     assert "op.drop_table(\"categories\")" in source
     assert "DELETE FROM documents" not in source
     assert "DELETE FROM tags WHERE id = :duplicate_id" in source
+
+
+def test_downgrade_lets_mysql_drop_new_table_indexes_with_their_tables():
+    migration = load_auto_classification_migration()
+    downgrade_source = inspect.getsource(migration.downgrade)
+
+    assert 'drop_table("classification_events")' in downgrade_source
+    assert not re.search(
+        r'drop_index\(\s*"ix_classification_events_user_created"',
+        downgrade_source,
+    )
+    assert 'drop_table("categories")' in downgrade_source
+    assert not re.search(
+        r'drop_index\(\s*"ix_categories_user_parent"',
+        downgrade_source,
+    )

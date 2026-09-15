@@ -434,11 +434,6 @@ def downgrade() -> None:
 
     op.drop_column("ingestion_jobs", "available_at")
 
-    op.drop_index(
-        "ix_classification_events_user_created",
-        table_name="classification_events",
-    )
     op.drop_table("classification_events")
-    op.drop_index("ix_categories_user_parent", table_name="categories")
     op.drop_table("categories")
     op.drop_column("tags", "normalized_name")
