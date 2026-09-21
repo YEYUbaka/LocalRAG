@@ -169,6 +169,27 @@ def test_evaluate_entries_merges_rewrite_results_by_chunk_id():
     assert detail["hit_ranks"] == {"a.md": 2, "b.md": 3}
 
 
+def test_evaluate_entries_calls_unified_search_once_with_all_queries():
+    calls = []
+
+    def unified(scope, original, queries):
+        calls.append((scope, original, queries))
+        return [result("a", "a.md")]
+
+    scope = TenantScope(1, 2)
+    detail = evaluate_entries(
+        [answerable_entry(question="原问题")],
+        scope,
+        lambda *_: pytest.fail("统一模式不应逐查询调用 legacy search"),
+        query_variants=lambda question: [question, "改写问题"],
+        unified_search_fn=unified,
+        unified_fusion_enabled=True,
+    )[0]
+
+    assert calls == [(scope, "原问题", ["原问题", "改写问题"])]
+    assert detail["hit_ranks"] == {"a.md": 1}
+
+
 def test_aggregate_metrics_averages_answerable_and_unanswerable_groups():
     details = [
         {
@@ -237,14 +258,23 @@ def test_temporary_eval_settings_applies_and_restores_values():
         "temperature": settings.temperature,
         "retrieval_top_k": settings.retrieval_top_k,
         "rerank_top_k": settings.rerank_top_k,
+        "unified_fusion_enabled": settings.unified_fusion_enabled,
+        "post_fusion_similarity_filter_enabled": settings.post_fusion_similarity_filter_enabled,
     }
 
-    with temporary_eval_settings(top_k=17, rewrite_enabled=False):
+    with temporary_eval_settings(
+        top_k=17,
+        rewrite_enabled=False,
+        unified_fusion_enabled=True,
+        post_fusion_similarity_filter_enabled=True,
+    ):
         assert settings.query_rewrite_enabled is False
         assert settings.web_search_enabled is False
         assert settings.temperature == 0
         assert settings.retrieval_top_k == 17
         assert settings.rerank_top_k == 17
+        assert settings.unified_fusion_enabled is True
+        assert settings.post_fusion_similarity_filter_enabled is True
 
     assert {name: getattr(settings, name) for name in before} == before
 
@@ -275,6 +305,8 @@ def test_eval_config_serializes_only_deterministic_parameters(tmp_path):
         "top_k": 20,
         "web_search_enabled": False,
         "temperature": 0,
+        "unified_fusion_enabled": False,
+        "post_fusion_similarity_filter_enabled": False,
     }
 
 
@@ -284,6 +316,8 @@ def test_build_parser_matches_cli_defaults(tmp_path):
 
     assert args.top_k == 20
     assert args.enable_rewrite is False
+    assert args.enable_unified_fusion is False
+    assert args.enable_post_fusion_similarity_filter is False
     assert args.golden == tmp_path / "golden.jsonl"
     assert args.label == "baseline"
 
@@ -294,6 +328,20 @@ def test_build_parser_supports_explicit_rewrite_and_legacy_no_rewrite(tmp_path):
 
     assert parser.parse_args([*common, "--enable-rewrite"]).enable_rewrite is True
     assert parser.parse_args([*common, "--no-rewrite"]).enable_rewrite is False
+
+
+def test_build_parser_supports_unified_fusion_experiment_flags(tmp_path):
+    parser = build_parser()
+    common = ["--golden", str(tmp_path / "golden.jsonl"), "--label", "unified"]
+
+    args = parser.parse_args([
+        *common,
+        "--enable-unified-fusion",
+        "--enable-post-fusion-similarity-filter",
+    ])
+
+    assert args.enable_unified_fusion is True
+    assert args.enable_post_fusion_similarity_filter is True
 
 
 @pytest.fixture

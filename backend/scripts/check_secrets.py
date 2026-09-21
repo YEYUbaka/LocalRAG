@@ -2,8 +2,9 @@
 
 Reads tracked text files only (git ls-files), skips contract snapshots and
 lock-file integrity strings, and rejects private key headers, JWT-looking
-values, OpenAI-style keys, and assignments of JWT_SECRET/LLM_API_KEY to
-non-example values. Prints path, line number and rule ID — never the value.
+values, OpenAI-style keys, assignments of JWT_SECRET/LLM_API_KEY to
+non-example values, and database URLs carrying non-placeholder passwords.
+Prints path, line number and rule ID — never the value.
 """
 
 from __future__ import annotations
@@ -20,6 +21,13 @@ RULES: dict[str, re.Pattern[str]] = {
     "jwt_like": re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
     "jwt_secret_assignment": re.compile(r"^\s*JWT_SECRET\s*=\s*(?!your-)[^\s#]+", re.MULTILINE),
     "llm_api_key_assignment": re.compile(r"^\s*LLM_API_KEY\s*=\s*(?!sk-your)[^\s#]+", re.MULTILINE),
+    # URL with embedded user and password, where the password is not one of
+    # the documented placeholder values (container-internal and doc-example
+    # credentials are allowed). Scheme must start with a letter so this
+    # rule's own source text cannot self-match.
+    "db_url_credentials": re.compile(
+        r"\b[a-zA-Z][\w+.-]*://[^\s/:@]+:(?!localrag\b|root\b|password\b|your-password\b|changeme\b)[^\s/@]+@"
+    ),
 }
 
 # Paths where rule hits are expected/benign (templates, snapshots, lockfiles)

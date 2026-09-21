@@ -105,10 +105,13 @@ conda activate localrag
 pip install -r backend/requirements.txt
 cp .env.example .env                # 填 MySQL 连接；LLM key 可留空
 
+# JWT_SECRET 必须由进程环境变量提供，不能写进 .env（见下方「JWT_SECRET 配置」）
+export JWT_SECRET=...               # Windows: $env:JWT_SECRET = '...'
+
 # 创建数据库
 mysql -u root -p -e "CREATE DATABASE localrag CHARACTER SET utf8mb4;"
 
-# 后端启动（backend/ 下）
+# 后端启动（backend/ 下，必须先设置 JWT_SECRET）
 uvicorn app.main:app --reload --port 8000     # API 文档: http://localhost:8000/docs
 
 # 前端启动（frontend/ 下）
@@ -119,14 +122,38 @@ npm run dev        # http://localhost:5173
 alembic revision --autogenerate -m "..." && alembic upgrade head
 
 # 测试与检查
-python -m pytest backend/tests -q        # 需先 export JWT_SECRET=<≥32字节字符串>
+python -m pytest backend/tests -q        # 同样需要 JWT_SECRET，见「JWT_SECRET 配置」
 cd frontend && npm run lint && npm test && npm run build
 
 # 全栈联调
 docker compose up --build
 ```
 
-注意：跑 pytest 必须设置 `JWT_SECRET`（缺失/过弱会拒绝启动，这是 Phase 0 的安全设计）；国内镜像下 `npm audit` 不可用，审计时加 `--registry=https://registry.npmjs.org`。
+注意：**启动后端**与**跑 pytest** 都必须先设置 `JWT_SECRET`（缺失/过弱会拒绝启动，这是 Phase 0 的安全设计），具体见下一节；国内镜像下 `npm audit` 不可用，审计时加 `--registry=https://registry.npmjs.org`。
+
+### JWT_SECRET 配置
+
+`JWT_SECRET` **只能来自进程环境变量**，写进 `.env` 会导致启动失败：`Settings`（`backend/app/config.py`）未声明 `jwt_secret` 字段且禁止额外字段，`.env` 中的该行会触发 `pydantic` 的 `extra_forbidden` 校验错误。校验规则：UTF-8 长度 ≥32 字节（`backend/app/security/secrets.py`）。
+
+三种配置方式：
+
+```bash
+# 1. 仅当前会话（最简单，每次开新终端都要设）
+export JWT_SECRET='<≥32字节的随机串>'        # Windows: $env:JWT_SECRET = '<...>'
+
+# 2. conda 环境变量（推荐，conda activate 时自动注入）
+conda env config vars set JWT_SECRET=$(openssl rand -hex 32) -n localrag
+conda activate localrag                      # 需重新激活才生效
+
+# 3. 用户级环境变量（全局生效，需重启 Explorer 或注销重登，见下）
+setx JWT_SECRET "<≥32字节的随机串>"
+```
+
+生成随机值：`openssl rand -hex 32`（64 字符，满足要求）。
+
+> **Windows 环境变量不生效的坑**：设置用户级/系统级环境变量（方式 3）后，**仅重开终端通常无效**。这些变量只写入注册表，需要系统广播 `WM_SETTINGCHANGE`，而已在运行的 Explorer 环境块仍是旧的，而所有从 Explorer 派生的终端（VSCode 集成终端、Windows Terminal、开始菜单）都继承这个旧环境块。彻底生效需**重启「Windows 资源管理器」（explorer.exe）或注销重登**。排查时对比「注册表值」与「新进程里的 `$env:JWT_SECRET`」即可确认是广播问题还是值本身的问题。会话内临时绕过：`$env:JWT_SECRET = (Get-ItemProperty 'HKCU:\Environment').JWT_SECRET`。
+
+CI 与测试使用固定值 `phase-zero-ci-secret-with-at-least-32-bytes`（见 `.github/workflows/quality-gates.yml`）。
 
 ## 编码风格
 
@@ -146,6 +173,7 @@ docker compose up --build
 - PR 使用 [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)：说明问题与方案、列出验证命令、关联 Issue；UI 变更附截图。
 - **显式标注**数据库 schema、环境变量、检索参数默认值的变更（影响所有部署方），并同步 `.env.example` 与 Alembic 迁移。
 - CI 五门禁（backend/frontend/contracts/migrations/security）必须全绿；contracts 快照变更用 `python scripts/export_contracts.py --output contracts` 生成后一并提交。
+- **重大变更完成后必须同步远端**：新功能、架构/契约/数据库迁移、检索参数基线、质量档案等变更一经完成并验证，立即按 Conventional Commits 提交并 `git push` 到远端对应分支（新分支用 `git push -u origin <branch>`），不得长期滞留本地工作区；会话结束前须确认远端与本地一致（中断的半成品可先推 WIP 并注明）。
 
 ## 安全与配置
 

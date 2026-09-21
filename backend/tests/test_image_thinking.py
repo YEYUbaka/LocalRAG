@@ -106,6 +106,44 @@ async def test_rag_query_with_image_emits_events(
     assert done_events[0][1]["conversation_id"] == 42
 
 
+@pytest.mark.asyncio
+async def test_rag_query_with_image_uses_unified_search_when_enabled(monkeypatch):
+    from app.domain.tenant import TenantScope
+    from app.services.rag_service import rag_query_with_image
+
+    unified_calls = []
+    mock_model = MagicMock()
+    mock_model.astream = MagicMock(return_value=_async_iter([_make_mock_chunk("完成")]))
+    monkeypatch.setattr("app.services.llm_service.get_vision_model", lambda: mock_model)
+    monkeypatch.setattr("app.services.rag_service.settings.unified_fusion_enabled", True)
+    monkeypatch.setattr(
+        "app.services.rag_service.unified_search",
+        lambda scope, original, queries: unified_calls.append((scope, original, queries)) or [],
+    )
+    monkeypatch.setattr(
+        "app.services.rag_service.hybrid_search",
+        lambda *args: pytest.fail("flag-on 图片路径不应调用 legacy hybrid_search"),
+    )
+    scope = TenantScope(7, 11)
+    mock_db = MagicMock()
+
+    with patch("app.services.rag_service.Conversation") as mock_conversation, patch(
+        "app.services.rag_service.Message"
+    ):
+        mock_conversation.return_value.id = 42
+        async for _ in rag_query_with_image(
+            question="原问题",
+            image_base64="data:image/png;base64,abc123",
+            conversation_id=None,
+            db=mock_db,
+            scope=scope,
+            user_id=7,
+        ):
+            pass
+
+    assert unified_calls == [(scope, "原问题", ["原问题"])]
+
+
 # ── rag_query_with_thinking ───────────────────────────────────────────
 
 
@@ -127,6 +165,7 @@ async def test_rag_query_with_thinking_emits_thinking_event(
 
     # Arrange: configure settings
     mock_settings.query_rewrite_enabled = False
+    mock_settings.unified_fusion_enabled = False
     mock_settings.context_window = 8192
     mock_settings.web_search_enabled = False
     mock_settings.rerank_enabled = False

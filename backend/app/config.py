@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 20
     rerank_top_k: int = 5
 
+    # Feature-flagged multi-query retrieval experiments. These are intentionally
+    # not persisted through the user settings API while the baseline is frozen.
+    unified_fusion_enabled: bool = False
+    post_fusion_similarity_filter_enabled: bool = False
+
     # Reranker
     rerank_enabled: bool = True
     rerank_threshold: float = 1.0

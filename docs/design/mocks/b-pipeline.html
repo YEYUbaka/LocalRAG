@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>方向 B · 流程 — LocalRAG 设计稿</title>
+<style>
+/* ============================================================
+   方向 B「流程」 Direction B — Pipeline
+   石墨 #22262B + 信号琥珀 #B45309（琥珀只表示「检索相关度/命中」）
+   签名：顶部可视化检索流水线，每个阶段可展开看候选与排名变化
+   论点：把 RAG 实际在做的事显出来 —— 界面即仪表。
+   ============================================================ */
+
+:root{
+  --paper:#FFFFFF;
+  --wash:#F4F5F6;
+  --wash-2:#EDEFF0;
+
+  --ink:#1A1D20;
+  --ink-2:#454B52;
+  --ink-3:#767D85;
+  --ink-4:#9BA1A8;
+
+  --rule:#E2E4E6;
+  --rule-2:#CDD1D5;
+
+  --graphite:#22262B;
+  --graphite-hi:#33383E;
+
+  --amber:#B45309;
+  --amber-wash:#FDF7ED;
+  --amber-line:#EAD3AE;
+
+  --r:4px;
+  --font-ui:"Inter","PingFang SC","Microsoft YaHei","Source Han Sans SC",system-ui,-apple-system,sans-serif;
+  --font-mono:"JetBrains Mono","Cascadia Code","SF Mono",Consolas,"Courier New",monospace;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:var(--font-ui);
+  font-size:13px;
+  color:var(--ink);
+  background:var(--paper);
+  -webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--graphite);outline-offset:2px;border-radius:2px}
+
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-4)}
+.amber{color:var(--amber)}
+
+.app{display:grid;grid-template-columns:206px 1fr;height:100vh;overflow:hidden}
+
+/* ============================================================
+   1. 窄导航
+   ============================================================ */
+.nav{
+  background:var(--graphite);color:#D6DADE;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.nav__brand{
+  padding:13px 14px 12px;border-bottom:1px solid #34393F;
+  display:flex;align-items:baseline;gap:7px;
+}
+.nav__mark{
+  font-family:var(--font-mono);font-size:13px;font-weight:700;
+  color:#fff;background:var(--amber);border-radius:3px;
+  padding:1px 5px;line-height:1.5;
+}
+.nav__word{font-size:12.5px;font-weight:600;color:#fff;letter-spacing:-.005em}
+.nav__ver{font-size:9.5px;color:#6E767E;margin-left:auto}
+
+.kb{
+  margin:10px 10px 0;padding:7px 8px;width:calc(100% - 20px);
+  background:#2A2F35;border:1px solid #3A4046;border-radius:var(--r);
+  display:flex;align-items:center;gap:7px;cursor:pointer;font:inherit;
+  color:#D6DADE;text-align:left;
+}
+.kb:hover{border-color:#4C545C}
+.kb__name{font-size:11.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kb__count{font-size:9.5px;color:#7C848C}
+
+.nav__tabs{display:flex;padding:10px 10px 0;gap:2px}
+.ntab{
+  flex:1;font:inherit;font-size:11px;font-weight:500;
+  color:#868E96;background:transparent;border:0;
+  border-bottom:1.5px solid transparent;padding:5px 0 6px;cursor:pointer;
+}
+.ntab:hover{color:#C2C8CE}
+.ntab[aria-selected="true"]{color:#fff;border-bottom-color:var(--amber)}
+
+.nav__scroll{flex:1;overflow-y:auto;padding:10px}
+.nav__scroll::-webkit-scrollbar{width:7px}
+.nav__scroll::-webkit-scrollbar-thumb{background:#3A4046;border-radius:4px}
+.nav__scroll::-webkit-scrollbar-track{background:transparent}
+
+.nav__new{
+  width:100%;font:inherit;font-size:11.5px;font-weight:500;
+  background:#2A2F35;border:1px solid #3A4046;border-radius:var(--r);
+  color:#D6DADE;padding:6px;cursor:pointer;margin-bottom:8px;
+}
+.nav__new:hover{background:#333940;color:#fff}
+
+.nlabel{
+  font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:#5F666D;padding:9px 6px 5px;
+}
+
+.conv{
+  display:block;width:100%;text-align:left;font:inherit;cursor:pointer;
+  padding:6px 8px;border-radius:3px;border:0;background:transparent;
+  border-left:2px solid transparent;color:#AEB5BC;
+  transition:background .1s,color .1s;
+}
+.conv:hover{background:#2A2F35;color:#E4E7EA}
+/* 琥珀只留给「检索数据」。当前选中项属于界面状态，用中性色，不占用信号色 */
+.conv[aria-current="true"]{
+  background:#2A2F35;color:#fff;border-left-color:#E8EAEC;font-weight:500;
+}
+.conv__t{font-size:11.5px;line-height:1.45;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conv__m{font-size:9.5px;color:#6E767E;margin-top:2px;display:block}
+.conv[aria-current="true"] .conv__m{color:#9AA2AA}
+
+.nav__foot{
+  border-top:1px solid #34393F;padding:9px 12px;
+  display:flex;align-items:center;gap:8px;font-size:11px;color:#9AA2AA;
+}
+.avatar{
+  width:19px;height:19px;border-radius:3px;background:#3A4046;color:#E4E7EA;
+  display:grid;place-items:center;font-size:9.5px;font-weight:600;flex-shrink:0;
+}
+
+/* ============================================================
+   2. 主区
+   ============================================================ */
+.main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+
+/* ---------- 签名元素：检索流水线 ---------- */
+.pipeline{
+  flex-shrink:0;border-bottom:1px solid var(--rule);
+  background:var(--wash);
+}
+.pipeline__row{
+  display:flex;align-items:stretch;gap:0;
+  padding:0 16px;overflow-x:auto;
+}
+.pipeline__row::-webkit-scrollbar{height:0}
+
+.stage{
+  font:inherit;cursor:pointer;text-align:left;
+  background:transparent;border:0;border-bottom:2px solid transparent;
+  padding:9px 12px 8px;min-width:104px;flex-shrink:0;
+  transition:background .12s,border-color .12s;
+}
+.stage:hover{background:var(--wash-2)}
+.stage[aria-expanded="true"]{background:var(--paper);border-bottom-color:var(--amber)}
+.stage__name{
+  font-size:9.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-4);margin-bottom:5px;display:flex;align-items:center;gap:5px;
+}
+/* 展开态用中性深色标记，琥珀只留给数据本身 */
+.stage[aria-expanded="true"] .stage__name{color:var(--ink-2)}
+.stage__val{
+  font-family:var(--font-mono);font-size:18px;font-weight:600;
+  color:var(--ink);line-height:1.1;letter-spacing:-.03em;
+}
+.stage__unit{font-size:10px;color:var(--ink-3);margin-left:3px;font-weight:400;letter-spacing:0}
+.stage__ms{
+  font-family:var(--font-mono);font-size:10px;color:var(--ink-4);
+  margin-top:5px;display:block;
+}
+.stage__chev{
+  display:inline-block;font-size:7px;color:var(--ink-4);
+  transition:transform .12s;
+}
+.stage[aria-expanded="true"] .stage__chev{transform:rotate(90deg);color:var(--amber)}
+
+.pipe-arrow{
+  display:flex;align-items:center;color:var(--rule-2);font-size:10px;
+  padding:0 1px;flex-shrink:0;
+}
+
+/* 阶段展开面板 */
+.stage-panel{
+  border-top:1px solid var(--rule);background:var(--paper);
+  padding:13px 16px 15px;display:none;
+  max-height:250px;overflow-y:auto;
+}
+.stage-panel[data-open="true"]{display:block}
+.stage-panel::-webkit-scrollbar{width:8px}
+.stage-panel::-webkit-scrollbar-thumb{background:var(--rule-2);border-radius:4px}
+
+.sp__head{
+  display:flex;align-items:baseline;gap:9px;margin-bottom:10px;
+}
+.sp__title{font-size:11.5px;font-weight:600}
+.sp__desc{font-size:10.5px;color:var(--ink-3)}
+.sp__close{
+  margin-left:auto;font:inherit;font-size:11px;color:var(--ink-3);
+  background:transparent;border:0;cursor:pointer;padding:2px 5px;border-radius:3px;
+}
+.sp__close:hover{background:var(--wash);color:var(--ink)}
+
+table.ranks{width:100%;border-collapse:collapse;font-size:11.5px}
+table.ranks th{
+  text-align:left;font-size:9.5px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-4);
+  padding:0 9px 6px 0;border-bottom:1px solid var(--rule);
+}
+table.ranks td{
+  padding:6px 9px 6px 0;border-bottom:1px solid var(--rule);
+  color:var(--ink-2);vertical-align:middle;
+}
+table.ranks tr:last-child td{border-bottom:0}
+table.ranks td.num{font-family:var(--font-mono);font-size:11px;width:34px;color:var(--ink-4)}
+table.ranks td.file{font-family:var(--font-mono);font-size:11px;color:var(--ink)}
+table.ranks td.score{
+  font-family:var(--font-mono);font-size:11px;font-weight:600;
+  color:var(--amber);text-align:right;width:52px;
+}
+.move{font-family:var(--font-mono);font-size:10px;font-weight:600;width:38px}
+.move--up{color:var(--amber)}
+.move--down{color:var(--ink-4)}
+.move--flat{color:var(--ink-4)}
+
+/* ---------- 消息流 ---------- */
+.stream{flex:1;overflow-y:auto;padding:0 22px}
+.stream::-webkit-scrollbar{width:9px}
+.stream::-webkit-scrollbar-thumb{background:var(--rule-2);border-radius:5px}
+.stream::-webkit-scrollbar-track{background:transparent}
+
+.turn{
+  display:grid;grid-template-columns:52px 1fr;gap:14px;
+  padding:16px 0;border-bottom:1px solid var(--rule);
+}
+.turn:last-child{border-bottom:0}
+.turn__role{
+  font-family:var(--font-mono);font-size:9.5px;font-weight:600;
+  letter-spacing:.07em;text-transform:uppercase;color:var(--ink-4);
+  text-align:right;padding-top:2px;
+}
+.turn--user .turn__role{color:var(--amber)}
+.turn__body{min-width:0}
+
+.qbox{
+  background:var(--wash);border-left:2px solid var(--graphite);
+  padding:9px 12px;font-size:13px;line-height:1.7;color:var(--ink);
+}
+
+/* 答案：无衬线、高密度 */
+.answer{font-size:13.5px;line-height:1.78;color:var(--ink)}
+.answer p{margin-bottom:11px}
+.answer p:last-child{margin-bottom:0}
+.answer strong{font-weight:600;color:var(--graphite);background:linear-gradient(transparent 62%, var(--amber-line) 62%)}
+.answer code{
+  font-family:var(--font-mono);font-size:11.5px;
+  background:var(--wash);border:1px solid var(--rule);
+  padding:0 4px;border-radius:3px;color:var(--ink);
+}
+.cite{
+  font-family:var(--font-mono);font-size:9.5px;font-weight:600;
+  color:var(--amber);background:var(--amber-wash);
+  border:1px solid var(--amber-line);border-radius:2px;
+  padding:0 3px;margin:0 1px;cursor:pointer;
+  vertical-align:super;line-height:1.5;
+  transition:background .12s,color .12s;
+}
+.cite:hover,.cite[data-active="true"]{background:var(--amber);color:#fff;border-color:var(--amber)}
+
+/* 内联证据网格 */
+.strip{margin-top:14px;border-top:1px dashed var(--rule-2);padding-top:11px}
+.strip__head{
+  display:flex;align-items:baseline;gap:8px;margin-bottom:9px;
+}
+.strip__title{font-size:9.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-4)}
+.strip__sub{font-size:10px;color:var(--ink-4);margin-left:auto}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:7px}
+.ev{
+  border:1px solid var(--rule);border-radius:var(--r);
+  padding:10px 11px;cursor:pointer;background:var(--paper);
+  transition:border-color .12s,box-shadow .12s;
+}
+.ev:hover{border-color:var(--amber-line)}
+.ev[data-active="true"]{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber-wash)}
+.ev__top{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.ev__num{
+  font-family:var(--font-mono);font-size:9.5px;font-weight:600;
+  color:var(--amber);background:var(--amber-wash);
+  border:1px solid var(--amber-line);border-radius:2px;
+  width:16px;height:15px;display:grid;place-items:center;flex-shrink:0;
+}
+.ev__file{
+  font-family:var(--font-mono);font-size:10.5px;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;
+}
+.ev__score{
+  font-family:var(--font-mono);font-size:10.5px;font-weight:600;color:var(--amber);
+}
+.ev__bar{height:2px;background:var(--rule);border-radius:1px;overflow:hidden;margin-bottom:7px}
+.ev__fill{height:100%;background:var(--amber);border-radius:1px}
+.ev__snip{
+  font-size:11px;line-height:1.62;color:var(--ink-2);
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+}
+.ev__snip mark{background:var(--amber-wash);color:var(--amber);font-weight:500;padding:0 1px;border-radius:2px}
+.ev__route{
+  font-family:var(--font-mono);font-size:10px;color:var(--ink-3);
+  margin-top:8px;display:flex;gap:9px;
+}
+.ev__route b{color:var(--ink);font-weight:700}
+
+/* ---------- 组合器 ---------- */
+.composer{
+  flex-shrink:0;border-top:1px solid var(--rule);padding:11px 22px 13px;background:var(--paper);
+}
+.cbox{
+  display:flex;gap:7px;align-items:flex-end;
+  border:1px solid var(--rule-2);border-radius:var(--r);
+  padding:7px 8px;transition:border-color .12s,box-shadow .12s;
+}
+.cbox:focus-within{border-color:var(--graphite);box-shadow:0 0 0 3px var(--wash)}
+.cbox textarea{
+  flex:1;font:inherit;font-size:13px;line-height:1.6;color:var(--ink);
+  border:0;background:transparent;resize:none;outline:none;min-height:20px;max-height:100px;
+}
+.cbox textarea::placeholder{color:var(--ink-4)}
+.ibtn{
+  width:26px;height:26px;border-radius:3px;border:1px solid transparent;
+  background:transparent;cursor:pointer;color:var(--ink-4);
+  display:grid;place-items:center;font-size:12px;flex-shrink:0;
+}
+.ibtn:hover{background:var(--wash);color:var(--ink-2)}
+.ibtn[aria-pressed="true"]{background:var(--amber-wash);color:var(--amber);border-color:var(--amber-line)}
+.send{
+  font:inherit;font-size:12px;font-weight:500;background:var(--graphite);color:#fff;
+  border:1px solid var(--graphite);border-radius:3px;padding:5px 12px;cursor:pointer;flex-shrink:0;
+}
+.send:hover{background:var(--graphite-hi)}
+.chint{
+  display:flex;justify-content:space-between;margin-top:7px;
+  font-size:10.5px;color:var(--ink-3);
+}
+.chint kbd{
+  font-family:var(--font-mono);font-size:9px;border:1px solid var(--rule-2);
+  border-bottom-width:2px;border-radius:2px;padding:0 3px;background:var(--wash);color:var(--ink-2);
+}
+
+.mobilebar{display:none}
+@media (max-width:820px){
+  .app{grid-template-columns:1fr}
+  .nav{display:none}
+  .mobilebar{display:flex;align-items:center;gap:9px;padding:9px 14px;border-bottom:1px solid var(--rule)}
+  .stream{padding:0 14px}
+  .composer{padding:10px 14px 12px}
+  .turn{grid-template-columns:1fr;gap:6px}
+  .turn__role{text-align:left;padding-top:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.001ms !important}}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ================= 窄导航 ================= -->
+  <nav class="nav" aria-label="主导航">
+    <div class="nav__brand">
+      <span class="nav__mark">R</span>
+      <span class="nav__word">LocalRAG</span>
+      <span class="nav__ver mono">0.4</span>
+    </div>
+
+    <button class="kb" type="button">
+      <span class="kb__name">面试知识库</span>
+      <span class="kb__count mono">24</span>
+    </button>
+
+    <div class="nav__tabs" role="tablist">
+      <button class="ntab" role="tab" aria-selected="true">对话</button>
+      <button class="ntab" role="tab" aria-selected="false">文档</button>
+      <button class="ntab" role="tab" aria-selected="false">设置</button>
+    </div>
+
+    <div class="nav__scroll">
+      <button class="nav__new" type="button">＋ 新对话</button>
+
+      <div class="nlabel">今天</div>
+      <button class="conv" type="button" aria-current="true">
+        <span class="conv__t">RAG 为什么要做混合检索</span>
+        <span class="conv__m mono">5 引用</span>
+      </button>
+      <button class="conv" type="button">
+        <span class="conv__t">BM25 和向量检索怎么融合</span>
+        <span class="conv__m mono">3 引用</span>
+      </button>
+      <button class="conv" type="button">
+        <span class="conv__t">rerank_threshold 调到多少合适</span>
+        <span class="conv__m mono">4 引用</span>
+      </button>
+      <button class="conv" type="button">
+        <span class="conv__t">chunk_size 取 500 的依据</span>
+        <span class="conv__m mono">2 引用</span>
+      </button>
+
+      <div class="nlabel">本周</div>
+      <button class="conv" type="button">
+        <span class="conv__t">HTTP 3xx 重定向语义整理</span>
+        <span class="conv__m mono">3 引用</span>
+      </button>
+      <button class="conv" type="button">
+        <span class="conv__t">Git rebase 和 merge 的区别</span>
+        <span class="conv__m mono">2 引用</span>
+      </button>
+      <button class="conv" type="button">
+        <span class="conv__t">Python GIL 对多线程的实际影响</span>
+        <span class="conv__m mono">4 引用</span>
+      </button>
+      <button class="conv" type="button">
+        <span class="conv__t">MySQL 索引失效的常见场景</span>
+        <span class="conv__m mono">5 引用</span>
+      </button>
+      <button class="conv" type="button">
+        <span class="conv__t">测试开发面试会问哪些自动化框架</span>
+        <span class="conv__m mono">6 引用</span>
+      </button>
+    </div>
+
+    <div class="nav__foot">
+      <span class="avatar">H</span>
+      <span>haoyu</span>
+    </div>
+  </nav>
+
+  <!-- ================= 主区 ================= -->
+  <main class="main">
+
+    <div class="mobilebar">
+      <span class="nav__mark" style="background:var(--amber)">R</span>
+      <span style="font-weight:600;font-size:12.5px">LocalRAG</span>
+    </div>
+
+    <!-- ---------- 签名：检索流水线 ---------- -->
+    <section class="pipeline" aria-label="检索流水线">
+      <div class="pipeline__row" id="pipelineRow">
+
+        <button class="stage" type="button" data-stage="rewrite" aria-expanded="false">
+          <span class="stage__name">查询改写 <span class="stage__chev">▶</span></span>
+          <span class="stage__val">3<span class="stage__unit">变体</span></span>
+          <span class="stage__ms">0.62s</span>
+        </button>
+
+        <span class="pipe-arrow">▸</span>
+
+        <button class="stage" type="button" data-stage="vector" aria-expanded="false">
+          <span class="stage__name">向量召回 <span class="stage__chev">▶</span></span>
+          <span class="stage__val">20<span class="stage__unit">命中</span></span>
+          <span class="stage__ms">0.31s</span>
+        </button>
+
+        <span class="pipe-arrow">＋</span>
+
+        <button class="stage" type="button" data-stage="bm25" aria-expanded="false">
+          <span class="stage__name">BM25 召回 <span class="stage__chev">▶</span></span>
+          <span class="stage__val">20<span class="stage__unit">命中</span></span>
+          <span class="stage__ms">0.08s</span>
+        </button>
+
+        <span class="pipe-arrow">▸</span>
+
+        <button class="stage" type="button" data-stage="rrf" aria-expanded="false">
+          <span class="stage__name">RRF 融合 <span class="stage__chev">▶</span></span>
+          <span class="stage__val">32<span class="stage__unit">去重</span></span>
+          <span class="stage__ms">0.01s</span>
+        </button>
+
+        <span class="pipe-arrow">▸</span>
+
+        <button class="stage" type="button" data-stage="rerank" aria-expanded="true">
+          <span class="stage__name">精排截断 <span class="stage__chev">▶</span></span>
+          <span class="stage__val">5<span class="stage__unit">保留</span></span>
+          <span class="stage__ms">1.24s</span>
+        </button>
+
+        <span class="pipe-arrow">·</span>
+
+        <div style="display:flex;align-items:center;padding:0 6px;flex-shrink:0">
+          <span class="mono" style="font-size:10px;color:var(--ink-4)">合计 <b style="color:var(--ink-2)">2.26s</b></span>
+        </div>
+      </div>
+
+      <!-- 阶段展开面板 -->
+      <div class="stage-panel" data-open="true" id="stagePanel">
+        <div class="sp__head">
+          <span class="sp__title" id="spTitle">精排截断 · bge-reranker-v2-m3</span>
+          <span class="sp__desc" id="spDesc">交叉编码器成对打分，阈值 1.0 以下丢弃</span>
+          <button class="sp__close" type="button" id="spClose">收起 ✕</button>
+        </div>
+        <div id="spBody"></div>
+      </div>
+    </section>
+
+    <!-- ---------- 消息流 ---------- -->
+    <div class="stream" id="stream">
+
+      <div class="turn turn--user">
+        <div class="turn__role">你</div>
+        <div class="turn__body">
+          <div class="qbox">我的本地 RAG 为什么要做混合检索？只用向量检索不行吗？</div>
+        </div>
+      </div>
+
+      <div class="turn turn--ai">
+        <div class="turn__role">回答</div>
+        <div class="turn__body">
+
+          <div class="answer">
+            <p>
+              只用向量检索在中文语料上会稳定地漏掉专有名词。混合检索的价值就是补上这个缺口。
+            </p>
+            <p>
+              向量检索靠语义相似度匹配，擅长「意思相近但用词不同」的情况。但问题里出现
+              <code>RRF</code>、<code>bge-reranker-v2-m3</code>、<code>chromadb</code>
+              这类低频专有名词时，语义向量往往把它们糊成模糊的「算法相关」概念，本该命中的 chunk 排不进前 20。<button class="cite" data-cite="1" type="button">1</button>
+            </p>
+            <p>
+              补上 BM25 后，两路各自召回 20 条，再用 RRF 按排名倒数加权融合。RRF 的好处是不必归一化两路的分数量纲 ——
+              向量用余弦距离、BM25 用 TF-IDF 加权，本来就不可比，融合<strong>排名</strong>比融合<strong>分数</strong>更稳。<button class="cite" data-cite="2" type="button">2</button><button class="cite" data-cite="3" type="button">3</button>
+            </p>
+            <p>
+              融合完还要过 <code>bge-reranker-v2-m3</code> 精排。RRF 只把候选池排个序，交叉编码器则拿「问题 + chunk」成对过模型，判断力强得多；
+              代价是 O(n) 次前向推理，所以只能用在已经收窄到 20 条的候选集上。<button class="cite" data-cite="5" type="button">5</button>
+            </p>
+            <p>
+              一句话：<strong>双路召回负责「不漏」，RRF 负责「可比」，reranker 负责「排准」。</strong><button class="cite" data-cite="4" type="button">4</button>
+            </p>
+          </div>
+
+          <!-- 内联证据 -->
+          <div class="strip">
+            <div class="strip__head">
+              <span class="strip__title">证据 · 5 条</span>
+              <span class="strip__sub mono">按重排分降序 · 阈值 1.0</span>
+            </div>
+            <div class="grid" id="evidenceGrid">
+
+              <article class="ev" data-cite="1" tabindex="0">
+                <div class="ev__top">
+                  <span class="ev__num">1</span>
+                  <span class="ev__file">interview-ai-engineer.md</span>
+                  <span class="ev__score">6.42</span>
+                </div>
+                <div class="ev__bar"><span class="ev__fill" style="width:100%"></span></div>
+                <p class="ev__snip"><strong>2. 混合检索</strong>　向量检索（语义相似） + BM25检索（关键词匹配） → <mark>RRF融合</mark></p>
+                <div class="ev__route"><span>向量 <b>#3</b></span><span>BM25 <b>#1</b></span><span>RRF <b>#2</b></span></div>
+              </article>
+
+              <article class="ev" data-cite="2" tabindex="0">
+                <div class="ev__top">
+                  <span class="ev__num">2</span>
+                  <span class="ev__file">RAG技术入门.md</span>
+                  <span class="ev__score">5.87</span>
+                </div>
+                <div class="ev__bar"><span class="ev__fill" style="width:91%"></span></div>
+                <p class="ev__snip"><strong>4. 混合检索</strong>：结合向量检索和关键词检索（BM25），提升<mark>专有名词</mark>的检索效果</p>
+                <div class="ev__route"><span>向量 <b>#1</b></span><span>BM25 <b>#5</b></span><span>RRF <b>#1</b></span></div>
+              </article>
+
+              <article class="ev" data-cite="3" tabindex="0">
+                <div class="ev__top">
+                  <span class="ev__num">3</span>
+                  <span class="ev__file">interview-project-star.md</span>
+                  <span class="ev__score">4.11</span>
+                </div>
+                <div class="ev__bar"><span class="ev__fill" style="width:64%"></span></div>
+                <p class="ev__snip">实现混合检索策略：向量检索 + BM25检索，通过 <mark>RRF 算法融合</mark>结果</p>
+                <div class="ev__route"><span>向量 <b>#7</b></span><span>BM25 <b>#2</b></span><span>RRF <b>#4</b></span></div>
+              </article>
+
+              <article class="ev" data-cite="4" tabindex="0">
+                <div class="ev__top">
+                  <span class="ev__num">4</span>
+                  <span class="ev__file">interview-project-qa.md</span>
+                  <span class="ev__score">2.36</span>
+                </div>
+                <div class="ev__bar"><span class="ev__fill" style="width:37%"></span></div>
+                <p class="ev__snip"><strong>后处理</strong>：对检索结果进行 <mark>Rerank 重排序</mark>，过滤低质量结果</p>
+                <div class="ev__route"><span>向量 <b>#11</b></span><span>BM25 <b>#9</b></span><span>RRF <b>#8</b></span></div>
+              </article>
+
+              <article class="ev" data-cite="5" tabindex="0">
+                <div class="ev__top">
+                  <span class="ev__num">5</span>
+                  <span class="ev__file">interview-ai-engineer.md</span>
+                  <span class="ev__score">1.24</span>
+                </div>
+                <div class="ev__bar"><span class="ev__fill" style="width:19%"></span></div>
+                <p class="ev__snip"><strong>3. Rerank重排序</strong>　用<mark>交叉编码器</mark>对检索结果重新排序，过滤低质量结果（设置阈值）</p>
+                <div class="ev__route"><span>向量 <b>#14</b></span><span>BM25 <b>#6</b></span><span>RRF <b>#11</b></span></div>
+              </article>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ---------- 组合器 ---------- -->
+    <div class="composer">
+      <div class="cbox">
+        <button class="ibtn" type="button" title="上传图片">▣</button>
+        <button class="ibtn" type="button" id="thinkBtn" aria-pressed="false" title="深度思考">◐</button>
+        <textarea id="input" rows="1" placeholder="接着问…"></textarea>
+        <button class="send" type="button" id="send">发送</button>
+      </div>
+      <div class="chint">
+        <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</span>
+        <span class="mono">24 文档 · 316 chunks · bge-small-zh-v1.5</span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+(function(){
+  /* ---------- 流水线阶段数据 ---------- */
+  var STAGES = {
+    rewrite:{
+      title:'查询改写 · Qwen',
+      desc:'原问题 + 2 个 LLM 生成的变体，各自独立检索后合并',
+      table:{
+        head:['','变体',''],
+        rows:[
+          ['1','我的本地 RAG 为什么要做混合检索？只用向量检索不行吗？','原问题'],
+          ['2','混合检索相比纯向量检索的优势','变体 A'],
+          ['3','BM25 关键词检索在中文 RAG 中的作用','变体 B']
+        ]
+      }
+    },
+    vector:{
+      title:'向量召回 · bge-small-zh-v1.5',
+      desc:'三路变体各取 top 20，余弦距离预过滤 similarity_threshold = 0.7',
+      table:{
+        head:['#','chunk','距离'],
+        rows:[
+          ['1','RAG技术入门.md · 最佳实践 第4条','0.31'],
+          ['2','interview-ai-engineer.md · Q12 混合检索','0.34'],
+          ['3','interview-project-star.md · 检索模块','0.41'],
+          ['4','interview-ai-engineer.md · Q12 Rerank','0.44'],
+          ['5','interview-db-basics.md · 索引原理','0.58']
+        ]
+      }
+    },
+    bm25:{
+      title:'BM25 召回 · jieba 分词',
+      desc:'关键词精确匹配，对 RRF / BM25 / chromadb 这类专有名词命中率高',
+      table:{
+        head:['#','chunk','BM25'],
+        rows:[
+          ['1','interview-ai-engineer.md · Q12 混合检索','18.4'],
+          ['2','interview-project-star.md · 检索模块','16.1'],
+          ['3','RAG技术入门.md · 最佳实践 第4条','12.7'],
+          ['4','interview-project-qa.md · 后处理','11.9'],
+          ['5','interview-ai-engineer.md · Q12 Rerank','9.3']
+        ]
+      }
+    },
+    rrf:{
+      title:'RRF 融合 · k = 60',
+      desc:'按排名倒数加权合并两路，40 条候选去重后剩 32 条',
+      table:{
+        head:['RRF #','chunk','向量 #','BM25 #'],
+        rows:[
+          ['1','RAG技术入门.md · 最佳实践 第4条','1','3'],
+          ['2','interview-ai-engineer.md · Q12 混合检索','2','1'],
+          ['3','interview-project-star.md · 检索模块','3','2'],
+          ['4','interview-project-qa.md · 后处理','8','4'],
+          ['5','interview-ai-engineer.md · Q12 Rerank','4','5']
+        ]
+      }
+    },
+    rerank:{
+      title:'精排截断 · bge-reranker-v2-m3',
+      desc:'交叉编码器成对打分，阈值 1.0 以下丢弃，保留 top 5',
+      table:{
+        head:['#','chunk','RRF #','重排分','变化'],
+        rows:[
+          ['1','interview-ai-engineer.md · Q12 混合检索','2','6.42','↑1'],
+          ['2','RAG技术入门.md · 最佳实践 第4条','1','5.87','↓1'],
+          ['3','interview-project-star.md · 检索模块','3','4.11','—'],
+          ['4','interview-project-qa.md · 后处理','4','2.36','—'],
+          ['5','interview-ai-engineer.md · Q12 Rerank','5','1.24','—']
+        ]
+      }
+    }
+  };
+
+  var panel = document.getElementById('stagePanel');
+  var spTitle = document.getElementById('spTitle');
+  var spDesc  = document.getElementById('spDesc');
+  var spBody  = document.getElementById('spBody');
+  var stages  = Array.prototype.slice.call(document.querySelectorAll('.stage'));
+
+  function moveClass(v){
+    if (v.indexOf('↑') === 0) return 'move move--up';
+    if (v.indexOf('↓') === 0) return 'move move--down';
+    return 'move move--flat';
+  }
+
+  function render(key){
+    var s = STAGES[key];
+    if (!s) return;
+    spTitle.textContent = s.title;
+    spDesc.textContent  = s.desc;
+
+    var t = s.table;
+    var html = '<table class="ranks"><thead><tr>';
+    t.head.forEach(function(h){ html += '<th>' + h + '</th>'; });
+    html += '</tr></thead><tbody>';
+
+    t.rows.forEach(function(r){
+      html += '<tr>';
+      r.forEach(function(cell, i){
+        var cls = 'file';
+        if (i === 0) cls = 'num';
+        else if (i === t.rows[0].length - 1 && key === 'rerank') cls = moveClass(cell);
+        else if (/^[\d.]+$/.test(cell)) cls = 'score';
+        else if (/^#?\d+$/.test(cell)) cls = 'num';
+        html += '<td class="' + cls + '">' + cell + '</td>';
+      });
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    spBody.innerHTML = html;
+  }
+
+  function open(key){
+    stages.forEach(function(st){
+      st.setAttribute('aria-expanded', String(st.dataset.stage === key));
+    });
+    panel.setAttribute('data-open','true');
+    render(key);
+  }
+
+  stages.forEach(function(st){
+    st.addEventListener('click', function(){
+      if (st.getAttribute('aria-expanded') === 'true'){
+        st.setAttribute('aria-expanded','false');
+        panel.setAttribute('data-open','false');
+      } else {
+        open(st.dataset.stage);
+      }
+    });
+  });
+
+  document.getElementById('spClose').addEventListener('click', function(){
+    stages.forEach(function(st){ st.setAttribute('aria-expanded','false'); });
+    panel.setAttribute('data-open','false');
+  });
+
+  render('rerank');
+
+  /* ---------- 引用联动 ---------- */
+  var evs   = Array.prototype.slice.call(document.querySelectorAll('.ev'));
+  var cites = Array.prototype.slice.call(document.querySelectorAll('.cite'));
+
+  function activate(n){
+    evs.forEach(function(e){ e.setAttribute('data-active', String(e.dataset.cite === n)); });
+    cites.forEach(function(c){ c.setAttribute('data-active', String(c.dataset.cite === n)); });
+  }
+
+  cites.forEach(function(c){ c.addEventListener('click', function(){ activate(c.dataset.cite); }); });
+  evs.forEach(function(e){
+    e.addEventListener('click', function(){ activate(e.dataset.cite); });
+    e.addEventListener('keydown', function(ev){
+      if (ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); activate(e.dataset.cite); }
+    });
+  });
+
+  /* ---------- 导航 ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.ntab'), function(t){
+    t.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.ntab'), function(x){
+        x.setAttribute('aria-selected', String(x === t));
+      });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.conv'), function(c){
+    c.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.conv'), function(x){
+        x.setAttribute('aria-current', String(x === c));
+      });
+    });
+  });
+
+  /* ---------- 输入 ---------- */
+  var input  = document.getElementById('input');
+  var stream = document.getElementById('stream');
+
+  function send(){
+    var v = input.value.trim();
+    if (!v) return;
+    var turn = document.createElement('div');
+    turn.className = 'turn turn--user';
+    turn.innerHTML = '<div class="turn__role">你</div><div class="turn__body"><div class="qbox"></div></div>';
+    turn.querySelector('.qbox').textContent = v;
+    stream.appendChild(turn);
+    input.value = '';
+    input.style.height = 'auto';
+    stream.scrollTop = stream.scrollHeight;
+  }
+
+  document.getElementById('send').addEventListener('click', send);
+  input.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  input.addEventListener('input', function(){
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+  });
+
+  var think = document.getElementById('thinkBtn');
+  think.addEventListener('click', function(){
+    think.setAttribute('aria-pressed', String(think.getAttribute('aria-pressed') !== 'true'));
+  });
+})();
+</script>
+</body>
+</html>

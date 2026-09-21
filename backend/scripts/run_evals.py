@@ -33,6 +33,7 @@ from app.domain.tenant import TenantScope
 
 
 SearchFn = Callable[[TenantScope, str], list[dict[str, Any]]]
+UnifiedSearchFn = Callable[[TenantScope, str, list[str]], list[dict[str, Any]]]
 QueryVariantsFn = Callable[[str], list[str]]
 SessionFactory = Callable[[], Session]
 RewriteFn = Callable[[str], Awaitable[list[str]]]
@@ -60,6 +61,7 @@ class EvalDependencies:
     environment_getter: Callable[[], dict[str, str]]
     now: Callable[[], datetime]
     monotonic: Callable[[], float]
+    unified_search: UnifiedSearchFn | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,8 @@ class EvalConfig:
     rewrite_enabled: bool = False
     test_docs: Path = PROJECT_DIR / "test_docs"
     runs_dir: Path = BACKEND_DIR / "evals" / "runs"
+    unified_fusion_enabled: bool = False
+    post_fusion_similarity_filter_enabled: bool = False
 
     def parameters(self) -> dict[str, Any]:
         golden_sha256 = None
@@ -81,6 +85,8 @@ class EvalConfig:
             "top_k": self.top_k,
             "web_search_enabled": False,
             "temperature": 0,
+            "unified_fusion_enabled": self.unified_fusion_enabled,
+            "post_fusion_similarity_filter_enabled": self.post_fusion_similarity_filter_enabled,
         }
 
 
@@ -316,6 +322,8 @@ def evaluate_entries(
     scope: TenantScope,
     search_fn: SearchFn,
     query_variants: QueryVariantsFn | None = None,
+    unified_search_fn: UnifiedSearchFn | None = None,
+    unified_fusion_enabled: bool = False,
 ) -> list[dict[str, Any]]:
     """Evaluate validated entries with a retrieval callable.
 
@@ -329,11 +337,16 @@ def evaluate_entries(
         queries = variants(entry["question"])
         if not queries:
             queries = [entry["question"]]
-        combined = _deduplicate_results(
-            item
-            for query in queries
-            for item in search_fn(scope, query)
-        )
+        if unified_fusion_enabled:
+            if unified_search_fn is None:
+                raise RuntimeError("已启用统一融合，但未提供 unified_search")
+            combined = unified_search_fn(scope, entry["question"], queries)
+        else:
+            combined = _deduplicate_results(
+                item
+                for query in queries
+                for item in search_fn(scope, query)
+            )
         ranked = combined[:20]
         result_details = [_result_detail(item, rank) for rank, item in enumerate(ranked, start=1)]
 
@@ -446,7 +459,12 @@ def write_run_artifacts(
 
 
 @contextmanager
-def temporary_eval_settings(top_k: int, rewrite_enabled: bool) -> Iterator[None]:
+def temporary_eval_settings(
+    top_k: int,
+    rewrite_enabled: bool,
+    unified_fusion_enabled: bool = False,
+    post_fusion_similarity_filter_enabled: bool = False,
+) -> Iterator[None]:
     if top_k < 1:
         raise ValueError("top_k 必须大于 0")
     overrides = {
@@ -455,6 +473,8 @@ def temporary_eval_settings(top_k: int, rewrite_enabled: bool) -> Iterator[None]
         "temperature": 0,
         "retrieval_top_k": top_k,
         "rerank_top_k": top_k,
+        "unified_fusion_enabled": unified_fusion_enabled,
+        "post_fusion_similarity_filter_enabled": post_fusion_similarity_filter_enabled,
     }
     previous = {name: getattr(settings, name) for name in overrides}
     try:
@@ -485,6 +505,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         dest="enable_rewrite",
         help="关闭 LLM 查询改写（默认）",
+    )
+    parser.add_argument(
+        "--enable-unified-fusion",
+        action="store_true",
+        default=False,
+        help="启用跨查询单池融合实验（默认关闭）",
+    )
+    parser.add_argument(
+        "--enable-post-fusion-similarity-filter",
+        action="store_true",
+        default=False,
+        help="启用融合后相似度过滤实验（默认关闭）",
     )
     parser.add_argument("--test-docs", type=Path, default=PROJECT_DIR / "test_docs", help="评测语料目录")
     parser.add_argument("--runs-dir", type=Path, default=BACKEND_DIR / "evals" / "runs", help="运行产物根目录")
@@ -518,7 +550,7 @@ def get_environment_versions() -> dict[str, str]:
 
 def default_dependencies() -> EvalDependencies:
     from app.core.bm25_search import rebuild_from_db, remove_document
-    from app.core.vectorstore import delete_by_document_id, hybrid_search
+    from app.core.vectorstore import delete_by_document_id, hybrid_search, unified_search
     from app.main import SessionLocal
     from app.services.document_service import process_document
     from app.services.query_rewrite import rewrite_query
@@ -535,6 +567,7 @@ def default_dependencies() -> EvalDependencies:
         environment_getter=get_environment_versions,
         now=lambda: datetime.now(timezone.utc),
         monotonic=time.perf_counter,
+        unified_search=unified_search,
     )
 
 
@@ -568,8 +601,6 @@ def run_evaluation(config: EvalConfig, dependencies: EvalDependencies) -> Path:
         dependencies.process_document,
     )
     corpus_stats["pruned"] = pruned
-    dependencies.rebuild_bm25(dependencies.session_factory)
-
     query_variants: QueryVariantsFn | None = None
     if config.rewrite_enabled:
         if dependencies.rewrite_query is None:
@@ -578,12 +609,20 @@ def run_evaluation(config: EvalConfig, dependencies: EvalDependencies) -> Path:
         def query_variants(question: str) -> list[str]:
             return asyncio.run(dependencies.rewrite_query(question))
 
-    with temporary_eval_settings(config.top_k, config.rewrite_enabled):
+    with temporary_eval_settings(
+        config.top_k,
+        config.rewrite_enabled,
+        config.unified_fusion_enabled,
+        config.post_fusion_similarity_filter_enabled,
+    ):
+        dependencies.rebuild_bm25(dependencies.session_factory)
         details = evaluate_entries(
             entries,
             scope,
             dependencies.hybrid_search,
             query_variants=query_variants,
+            unified_search_fn=dependencies.unified_search,
+            unified_fusion_enabled=config.unified_fusion_enabled,
         )
 
     parameters = config.parameters()
@@ -636,6 +675,8 @@ def main(
         rewrite_enabled=args.enable_rewrite,
         test_docs=args.test_docs,
         runs_dir=args.runs_dir,
+        unified_fusion_enabled=args.enable_unified_fusion,
+        post_fusion_similarity_filter_enabled=args.enable_post_fusion_similarity_filter,
     )
     try:
         run_dir = run_evaluation(config, dependencies or default_dependencies())
