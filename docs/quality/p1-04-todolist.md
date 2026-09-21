@@ -26,7 +26,7 @@
 - [ ] 报告中说明 `rerank_threshold` 生产默认 1.0 对低分 BM25-only 命中的既有影响（沿袭 master 语义，非本 PR 引入）
 - [ ] 写 P1-04 评测报告（建议 `docs/quality/p1-04-acceptance.md`，含 run 目录、耗时、五指标表）
 - [ ] 更新 `docs/quality/phase-1-plan.md` §7 状态表 P1-04 行
-- [ ] 评测报告与状态表随本 PR 落地后，方可点合并（P1-04 §4 是硬门槛，不拆后续 PR）
+- [~] 评测报告与状态表落地后方可点合并 —— **本硬门槛已于 2026-09-22 经维护者决定放宽**：为解除该分支长期滞留（`feat/P1-04-unified-fusion` 自 2026-08-28 起已开 PR #15 未合），改为「实现先落地、评测另开」，验收报告作为后续独立任务补齐。评测结果出来前，`unified_fusion_enabled` 生产默认保持 `false`。
 - [ ] 合并前考虑：启用 UNIFIED_FUSION_ENABLED 的部署需重索引旧库（pre-P1-03 文档的 Chroma metadata 无 chunk_id，融合去重会失效），在报告或 .env.example 注释中声明
 - [ ] 合并后小项（可拆 follow-up）：.env.example 注明 POST_FUSION_SIMILARITY_FILTER_ENABLED 依赖 unified_fusion；`generalized_rrf` 回退键改名 `_fusion_key` 避免与 P1-05 chunk_id 语义混淆
 
