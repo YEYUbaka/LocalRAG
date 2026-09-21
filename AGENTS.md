@@ -114,6 +114,9 @@ mysql -u root -p -e "CREATE DATABASE localrag CHARACTER SET utf8mb4;"
 # 后端启动（backend/ 下，必须先设置 JWT_SECRET）
 uvicorn app.main:app --reload --port 8000     # API 文档: http://localhost:8000/docs
 
+# 或用仓库启动脚本（根目录，自动起前后端，默认端口 8000/5173）
+start.bat
+
 # 前端启动（frontend/ 下）
 npm install        # 首次；CI 用 npm ci
 npm run dev        # http://localhost:5173
@@ -152,6 +155,8 @@ setx JWT_SECRET "<≥32字节的随机串>"
 生成随机值：`openssl rand -hex 32`（64 字符，满足要求）。
 
 > **Windows 环境变量不生效的坑**：设置用户级/系统级环境变量（方式 3）后，**仅重开终端通常无效**。这些变量只写入注册表，需要系统广播 `WM_SETTINGCHANGE`，而已在运行的 Explorer 环境块仍是旧的，而所有从 Explorer 派生的终端（VSCode 集成终端、Windows Terminal、开始菜单）都继承这个旧环境块。彻底生效需**重启「Windows 资源管理器」（explorer.exe）或注销重登**。排查时对比「注册表值」与「新进程里的 `$env:JWT_SECRET`」即可确认是广播问题还是值本身的问题。会话内临时绕过：`$env:JWT_SECRET = (Get-ItemProperty 'HKCU:\Environment').JWT_SECRET`。
+
+> **验证时 backend 报 502 / `ECONNREFUSED` 反复出现**：这类症状基本都是「后端没起来」，而最常见原因是启动它的那个进程没有 `JWT_SECRET`——例如 `start.bat` 用 `conda run -n localrag uvicorn ...` 启动，**它只继承发起终端的环境**；若变量只写在注册表里（见上条），`cmd` 窗口里就没有它，后端会立刻崩溃退出。另一个容易误判的点：`uvicorn --reload` 的父进程在应用导入失败时**不会退出、也不会监听端口**，所以 `netstat` 看不到它，但端口可能仍被它占住（后续启动报 `Errno 10048` 或 `WinError 10013`），并且 `Ctrl+C` 到不了被强杀的 worker——排查时用 `Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like '*uvicorn*' }` 把父子进程一起清掉。
 
 CI 与测试使用固定值 `phase-zero-ci-secret-with-at-least-32-bytes`（见 `.github/workflows/quality-gates.yml`）。
 
