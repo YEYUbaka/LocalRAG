@@ -247,6 +247,8 @@ class ChunkRecord:
 4. 用 P1-02 评测对比 flag on/off 两组指标，**不允许低于基线**；报告贴 PR。
 5. BM25-only 命中不得因 Dense 为空而丢弃（§4.4 红线，写测试固化）。
 
+**状态（2026-09-24）**：实现已合入 master（`dac78d4`，分支 `feat/P1-04-unified-fusion`）。评测验收**通过**：off 组两轮精确复现 2026-08-23 基线，on 组两轮五项指标均不回退，MRR@10 与 nDCG@10 小幅提升。**局限**：on 组以 `--no-rewrite` 执行，只覆盖单查询融合路径；跨变体统一候选池需 rewrite-on 才在评测路径上，尚未补测。详见 [P1-04 验收报告](p1-04-acceptance.md)。
+
 ### P1-05 Chunk 稳定 ID 贯穿（2 天）— Ingestion + RAG 协作
 
 ID 规范（上游设计 §4.3）：`{document_key}-v{document_version}-c{chunker_version}-{ordinal:06d}`，另在 Chroma metadata 存 `content_hash`。落地动作：
@@ -299,7 +301,7 @@ A：`.pytest_cache` 写入失败的 PytestCacheWarning 可忽略，不影响结�
 | P1-01 Golden Set v1 | RAG + 全员 | ✅ 120 条正式集已合入 | [PR #10](https://github.com/YEYUbaka/LocalRAG/pull/10)；24 份语料，含 15 条原生表格题；人工抽查状态见 REVIEW-STATUS |
 | P1-02 评测 CLI | RAG | 🔄 rewrite-off 基线完成 | [PR #9](https://github.com/YEYUbaka/LocalRAG/pull/9)；off 两轮逐题结果一致，on 因外部 LLM HTTP 502 待补，详见 [基线报告](phase-1-baseline.md) |
 | P1-03 域契约冻结 | Contract | ⬜ 未开始 | 与 P1-01 并行 |
-| P1-04 统一融合重构 | RAG | ⬜ 未开始 | 依赖 P1-02 基线 |
+| P1-04 统一融合重构 | RAG | ✅ 实现已合入 + 评测验收通过 | 实现 `dac78d4`；off 组精确复现基线，on 组五项指标无回退（MRR@10 +0.006667、nDCG@10 +0.005237），详见[验收报告](p1-04-acceptance.md) |
 | P1-05 Chunk 稳定 ID | Ingestion+RAG | 🔄 实现与本地验证完成 | 租户级 MD5、稳定 ID、迁移与表格解析已完成；等待 PR 五门禁，rewrite-on 外部 502 另行补测 |
 | A3 备份/Docker | Security/Infra | ⬜ 未开始 | 支线 |
 | C1 前端测试基线 | Frontend | ⬜ 未开始 | 支线 |

@@ -1,7 +1,8 @@
 # P1-04 统一多查询融合 — 续跑清单
 
-> 状态：实现已完成，评测未跑（等机器空闲时执行）。
-> 更新日期：2026-08-29。本文件为工作清单，任务完成后可归档或删除。
+> 状态：实现已合入 master（`dac78d4`），**评测已完成并验收通过**（2026-09-24）。
+> 更新日期：2026-09-24。本文件为工作清单，任务完成后可归档或删除。
+> 评测结论与局限见 [P1-04 验收报告](p1-04-acceptance.md)。
 
 ## 1. 已完成
 
@@ -20,12 +21,12 @@
 
 - [ ] **[P1] 补测试**：Dense 完全为空时 BM25-only 保留的字面边界用例；flag-off 等价性回归（flag=False 断言仍走逐查询 hybrid_search）；rerank 异常降级为 RRF 序的用例
 - [ ] **[P2] run_evals manifest 补记 ambient 参数**（rerank_enabled/rerank_threshold/similarity_threshold/bm25_weight/hybrid_search），防 on/off 对比静默偏斜；同步 test_run_evals.py 的确定性参数测试
-- [ ] 跑 flag off 评测 ×1~2 轮（命令见 §4）
-- [ ] 跑 flag on 评测 ×1~2 轮（加 `--enable-unified-fusion`）；报告中说明局限：`--no-rewrite` 下 on 组只覆盖单查询融合路径（去内联阈值+去重+后过滤+单次精排），多变体统一池需 rewrite-on 才在评测路径上
-- [ ] 对比基线（§5），指标不得低于基线；若 on 组有回退，先修再跑
-- [ ] 报告中说明 `rerank_threshold` 生产默认 1.0 对低分 BM25-only 命中的既有影响（沿袭 master 语义，非本 PR 引入）
-- [ ] 写 P1-04 评测报告（建议 `docs/quality/p1-04-acceptance.md`，含 run 目录、耗时、五指标表）
-- [ ] 更新 `docs/quality/phase-1-plan.md` §7 状态表 P1-04 行
+- [x] 跑 flag off 评测 ×1~2 轮（命令见 §4）—— 2026-09-24 完成两轮，`20260923T1921*/1922*Z-p104-unified-fusion-off-run1/-run2`
+- [x] 跑 flag on 评测 ×1~2 轮（加 `--enable-unified-fusion`）—— 同上完成两轮；报告中已声明局限：`--no-rewrite` 下 on 组只覆盖单查询融合路径（去内联阈值+去重+后过滤+单次精排），多变体统一池需 rewrite-on 才在评测路径上
+- [x] 对比基线（§5），指标不得低于基线 —— off 组两轮**精确复现**基线五项指标；on 组无回退，MRR@10 +0.006667、nDCG@10 +0.005237
+- [x] 报告中说明 `rerank_threshold` 生产默认 1.0 对低分 BM25-only 命中的既有影响（沿袭 master 语义，非本 PR 引入）—— 见报告 §6.3
+- [x] 写 P1-04 评测报告 —— [p1-04-acceptance.md](p1-04-acceptance.md)，含 run 目录、耗时、五指标表、分题型结果
+- [x] 更新 `docs/quality/phase-1-plan.md` §7 状态表 P1-04 行
 - [~] 评测报告与状态表落地后方可点合并 —— **本硬门槛已于 2026-09-22 经维护者决定放宽**：为解除该分支长期滞留（`feat/P1-04-unified-fusion` 自 2026-08-28 起已开 PR #15 未合），改为「实现先落地、评测另开」，验收报告作为后续独立任务补齐。评测结果出来前，`unified_fusion_enabled` 生产默认保持 `false`。
 - [ ] 合并前考虑：启用 UNIFIED_FUSION_ENABLED 的部署需重索引旧库（pre-P1-03 文档的 Chroma metadata 无 chunk_id，融合去重会失效），在报告或 .env.example 注释中声明
 - [ ] 合并后小项（可拆 follow-up）：.env.example 注明 POST_FUSION_SIMILARITY_FILTER_ENABLED 依赖 unified_fusion；`generalized_rrf` 回退键改名 `_fusion_key` 避免与 P1-05 chunk_id 语义混淆
@@ -72,6 +73,8 @@ D:/miniconda3/envs/localrag/python.exe backend/scripts/run_evals.py \
 ```
 
 索引已建好会自动跳过（同 MD5 幂等），直接进入检索评测。run 产物落 `backend/evals/runs/`（不入库）。
+
+> **2026-09-24 实际执行位置**：上述命令在独立服务器（AutoDL 容器，48 核 + RTX 3080 Ti）上以同一 commit、同一隔离库结构执行，单轮耗时 28–29 s。命令相同，另有两个环境前提见 [验收报告](p1-04-acceptance.md) §7：torch 的 CUDA 构建必须匹配驱动（本机需 `cu126`），以及原生库加载顺序需先 `import torch`（否则 `default_dependencies()` 段错误）。两者均不涉及应用代码改动。
 
 ## 5. 基线对照数字
 
